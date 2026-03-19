@@ -1,0 +1,4 @@
+mootdx>=0.11.0
+pytdx>=1.72
+websockets>=12.0
+aiohttp>=3.9
