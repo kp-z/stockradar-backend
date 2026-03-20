@@ -786,14 +786,63 @@ def get_market_state():
 clients = set()
 all_alerts = []  # 累积的异动
 
+def gen_stock_list_from_cache():
+    """基于缓存K线数据生成股票列表（无需实时行情，用于非盘中展示）"""
+    results = []
+    now = datetime.now()
+    time_str = now.strftime('%H:%M:%S')
+    for code, name in STOCKS:
+        klines = klines_cache.get(code, [])
+        if not klines or len(klines) < 2:
+            continue
+        last_k = klines[-1]
+        prev_k = klines[-2]
+        price = last_k['close']
+        change = round((last_k['close'] - prev_k['close']) / prev_k['close'] * 100, 2) if prev_k['close'] > 0 else 0
+        amount = round(last_k['amount'] / 1e8, 2) if last_k['amount'] > 1e6 else round(last_k['amount'], 2)
+        concepts = CONCEPT_MAP.get(code, [])
+
+        # 判断标签
+        label = '📊 个股'
+        alert_type = 'volume'
+        if change >= 9.8:
+            label = '🔒 涨停'; alert_type = 'limit-up'
+        elif change >= 5:
+            label = '🚀 强势'; alert_type = 'rocket'
+        elif change <= -9.8:
+            label = '🔒 跌停'; alert_type = 'limit-down'
+        elif change <= -5:
+            label = '🏊 大跌'; alert_type = 'dive'
+
+        results.append({
+            'id': f"{code}-cache-{int(time.time()*1000)}-{random.randint(100,999)}",
+            'code': code,
+            'name': name,
+            'type': alert_type,
+            'label': label,
+            'price': price,
+            'change': change,
+            'speed': 0,
+            'amount': amount,
+            'time': last_k.get('date', time_str),
+            'timestamp': int(time.time() * 1000),
+            'reason': None,
+            'concepts': concepts[:3],
+        })
+    results.sort(key=lambda a: abs(a['change']), reverse=True)
+    return results
+
 async def ws_handler(websocket):
     clients.add(websocket)
     print(f"[WS] +1 客户端 ({len(clients)})")
     try:
-        # 发送初始数据
+        # 发送初始数据：如果有缓存，立即推送股票列表
+        init_alerts = all_alerts[:50]
+        if not init_alerts and klines_cache:
+            init_alerts = gen_stock_list_from_cache()
         await websocket.send(json.dumps({
             'type': 'init',
-            'alerts': all_alerts[:50],
+            'alerts': init_alerts,
             'market': get_market_state()
         }))
         async for msg in websocket:
