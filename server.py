@@ -83,13 +83,39 @@ def code_to_market(code):
     """0=深圳 1=上海"""
     return 1 if code.startswith('6') or code.startswith('9') else 0
 
-# ── 预加载的K线缓存 {code: [kline_list]} ──
+# ── K线缓存 {code: [kline_list]} ──
 klines_cache = {}
-klines_cache_time = 0  # 上次加载时间戳
+KLINES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'klines_data.json')
+_last_save_date = ''  # 上次收盘保存的日期 YYYY-MM-DD
+_today_updated = False  # 今天是否已用实时行情更新过当天K线
+
+def load_klines_from_file():
+    """启动时从本地JSON文件加载K线数据（毫秒级）"""
+    global klines_cache
+    if os.path.exists(KLINES_FILE):
+        try:
+            with open(KLINES_FILE, 'r', encoding='utf-8') as f:
+                klines_cache = json.load(f)
+            total = sum(len(v) for v in klines_cache.values())
+            print(f"[缓存] 从本地文件加载成功: {len(klines_cache)} 只股票, 共 {total} 条K线")
+            return True
+        except Exception as e:
+            print(f"[缓存] 本地文件加载失败: {e}")
+    return False
+
+def save_klines_to_file():
+    """将K线缓存保存到本地JSON文件"""
+    try:
+        with open(KLINES_FILE, 'w', encoding='utf-8') as f:
+            json.dump(klines_cache, f, ensure_ascii=False)
+        total = sum(len(v) for v in klines_cache.values())
+        print(f"[缓存] 已保存到本地文件: {len(klines_cache)} 只股票, 共 {total} 条K线")
+    except Exception as e:
+        print(f"[缓存] 保存失败: {e}")
 
 def preload_all_klines(days=150):
-    """启动时预加载所有个股150日K线数据"""
-    global klines_cache, klines_cache_time
+    """从通达信下载所有个股K线数据"""
+    global klines_cache
     client = get_tdx()
     if not client:
         print("[预加载] 通达信未连接，跳过")
@@ -115,14 +141,64 @@ def preload_all_klines(days=150):
                 loaded += 1
         except Exception as e:
             print(f"[预加载] {code} {name} 失败: {e}")
-    klines_cache_time = time.time()
     print(f"[预加载] 完成，共加载 {loaded}/{len(STOCKS)} 只股票的 {days} 日K线")
+    # 保存到文件
+    save_klines_to_file()
+
+def trim_klines_to_150():
+    """修剪每只股票的K线数据，只保留最近150天"""
+    for code in klines_cache:
+        if len(klines_cache[code]) > 150:
+            klines_cache[code] = klines_cache[code][-150:]
+
+def update_today_kline_from_quotes(quotes):
+    """用实时行情更新当天的K线数据（盘中每轮调用）"""
+    if not quotes:
+        return
+    today_str = datetime.now().strftime('%Y-%m-%d')
+    updated = 0
+    for code, name in STOCKS:
+        q = quotes.get(code)
+        if not q or q['price'] <= 0:
+            continue
+        klines = klines_cache.get(code, [])
+        if not klines:
+            continue
+        # 构造当天K线
+        today_k = {
+            'date': today_str,
+            'open': q['open'] if q['open'] > 0 else q['price'],
+            'close': q['price'],
+            'high': q['high'] if q['high'] > 0 else q['price'],
+            'low': q['low'] if q['low'] > 0 else q['price'],
+            'volume': q['vol'],
+            'amount': q['amount'] * 1e8,  # 转回原始单位
+        }
+        # 如果最后一条是今天的，替换；否则追加
+        if klines and klines[-1]['date'] == today_str:
+            klines[-1] = today_k
+        else:
+            klines.append(today_k)
+        klines_cache[code] = klines
+        updated += 1
+    return updated
+
+def on_market_close():
+    """收盘时调用：修剪到150天并保存"""
+    global _last_save_date, _today_updated
+    today_str = datetime.now().strftime('%Y-%m-%d')
+    if _last_save_date == today_str:
+        return  # 今天已保存过
+    trim_klines_to_150()
+    save_klines_to_file()
+    _last_save_date = today_str
+    _today_updated = False
+    print(f"[收盘] 已保存 {today_str} 完整数据，维护150天窗口")
 
 def refresh_klines_cache_if_needed():
-    """每天刷新一次缓存"""
-    global klines_cache_time
-    if time.time() - klines_cache_time > 3600 * 4:  # 4小时刷新一次
-        print("[预加载] 缓存过期，重新加载...")
+    """检查是否需要刷新缓存（仅在缓存为空时从通达信重新下载）"""
+    if not klines_cache:
+        print("[缓存] 缓存为空，从通达信下载...")
         preload_all_klines(150)
 
 # ── 方案选股引擎 ──
@@ -780,21 +856,25 @@ async def broadcast(data):
     await asyncio.gather(*[ws.send(msg) for ws in clients.copy()], return_exceptions=True)
 
 async def scan_loop():
-    """主扫描循环：每3秒获取行情并检测异动"""
+    """主扫描循环：每3秒获取行情并检测异动，同时实时更新当天K线"""
     global all_alerts
     print("[扫描] 启动实时扫描循环")
 
     # 启动时先连接通达信
     get_tdx()
 
+    _prev_state = ''
+    _kline_update_count = 0
+
     while True:
         try:
             state = get_market_state()
 
-            # 盘中才扫描
+            # 盘中扫描
             if state in ('open', 'call'):
                 quotes = fetch_realtime_quotes()
                 if quotes:
+                    # ① 检测异动
                     new_alerts = detect_alerts(quotes)
                     if new_alerts:
                         all_alerts = new_alerts + all_alerts
@@ -805,11 +885,25 @@ async def scan_loop():
                         })
                         for a in new_alerts[:3]:
                             print(f"[异动] {a['name']} {a['label']} {'+' if a['change']>=0 else ''}{a['change']}%")
+
+                    # ② 实时更新当天K线（每轮都更新内存中的当天数据）
+                    updated = update_today_kline_from_quotes(quotes)
+                    _kline_update_count += 1
+                    if _kline_update_count % 100 == 0:  # 每300秒(5分钟)打印一次
+                        print(f"[K线] 已实时更新 {updated} 只股票的当天K线 (第{_kline_update_count}轮)")
                 else:
                     print("[扫描] 未获取到行情数据")
+
+            # 刚从盘中切换到收盘 → 保存数据
+            elif _prev_state in ('open',) and state == 'closed':
+                print("[扫描] 检测到收盘，保存K线数据...")
+                on_market_close()
+
             else:
                 # 非盘中：每30秒检查一次状态
                 await asyncio.sleep(27)
+
+            _prev_state = state
 
         except Exception as e:
             print(f"[扫描] 错误: {e}")
@@ -821,9 +915,49 @@ async def main():
     server = await websockets.serve(ws_handler, "0.0.0.0", WS_PORT)
     print(f"[StockRadar] ws://0.0.0.0:{WS_PORT} (mootdx 真实行情)")
 
-    # 启动时预加载所有个股150日K线数据
-    print("[启动] 预加载150日K线数据...")
-    preload_all_klines(150)
+    # 启动时优先从本地JSON文件加载K线（毫秒级启动）
+    print("[启动] 尝试从本地文件加载K线缓存...")
+    loaded = load_klines_from_file()
+    if not loaded:
+        # 本地没有数据，从通达信下载150日K线
+        print("[启动] 本地无缓存，从通达信下载150日K线...")
+        preload_all_klines(150)
+    else:
+        # 本地有数据，后台异步补充最新数据（不阻塞启动）
+        print("[启动] 本地缓存已加载，后台补充最新K线数据...")
+        # 在后台更新：从通达信获取最新数据并合并
+        try:
+            client = get_tdx()
+            if client:
+                updated_count = 0
+                for code, name in STOCKS:
+                    try:
+                        df = client.bars(symbol=code, frequency=9, offset=5)  # 只取最近5天补充
+                        if df is not None and not df.empty:
+                            existing = klines_cache.get(code, [])
+                            existing_dates = {k['date'] for k in existing}
+                            for _, row in df.iterrows():
+                                dt = str(row.get('datetime', ''))[:10]
+                                if dt not in existing_dates:
+                                    existing.append({
+                                        'date': dt,
+                                        'open': round(float(row.get('open', 0)), 2),
+                                        'close': round(float(row.get('close', 0)), 2),
+                                        'high': round(float(row.get('high', 0)), 2),
+                                        'low': round(float(row.get('low', 0)), 2),
+                                        'volume': float(row.get('vol', 0)),
+                                        'amount': float(row.get('amount', 0)),
+                                    })
+                            existing.sort(key=lambda k: k['date'])
+                            klines_cache[code] = existing[-150:]  # 保持150天
+                            updated_count += 1
+                    except Exception as e:
+                        print(f"[补充] {code} 失败: {e}")
+                print(f"[补充] 完成，补充了 {updated_count} 只股票的最新K线")
+                trim_klines_to_150()
+                save_klines_to_file()
+        except Exception as e:
+            print(f"[补充] 补充K线失败: {e}")
 
     await scan_loop()
 
