@@ -10,7 +10,7 @@ import websockets
 import os
 
 # Railway 会提供 PORT 环境变量
-WS_PORT = int(os.environ.get('PORT', 9876))
+WS_PORT = int(os.environ.get('PORT', 8080))
 
 STOCKS = [
     ('000001', '平安银行', ['银行','金融科技','数字货币']),
