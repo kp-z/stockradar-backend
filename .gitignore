@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 录音/大文件
+recordings/
+
+# 环境变量
+.env
+
+# 编辑器
+.claude/
