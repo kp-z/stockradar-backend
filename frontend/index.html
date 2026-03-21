@@ -305,6 +305,20 @@
       animation: pulse 2s infinite;
     }
     @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+
+    /* 数据源状态指示器 */
+    .source-indicators { display: flex; align-items: center; gap: 5px; margin-left: 4px; }
+    .source-dot {
+      display: flex; align-items: center; gap: 3px;
+    }
+    .source-dot-circle {
+      width: 5px; height: 5px; border-radius: 50%; background: rgba(255,255,255,0.15);
+      flex-shrink: 0;
+    }
+    .source-dot-circle.ok { background: #22c55e; animation: pulse 2s infinite; }
+    .source-dot-circle.err { background: #ef4444; }
+    .source-dot-label { font-size: 9px; color: var(--muted); line-height: 1; }
+
     .opacity-slider {
       width: 50px; height: 3px; -webkit-appearance: none; appearance: none;
       background: rgba(255,255,255,0.1); border-radius: 3px; outline: none;
@@ -519,6 +533,20 @@
       <div class="footer-left">
         <div class="refresh-dot" id="refreshDot"></div>
         <span id="refreshStatus">等待连接</span>
+        <div class="source-indicators" id="sourceIndicators">
+          <div class="source-dot" title="通达信">
+            <div class="source-dot-circle" id="srcTdx"></div>
+            <span class="source-dot-label">TDX</span>
+          </div>
+          <div class="source-dot" title="东方财富">
+            <div class="source-dot-circle" id="srcEastmoney"></div>
+            <span class="source-dot-label">东财</span>
+          </div>
+          <div class="source-dot" title="开盘啦">
+            <div class="source-dot-circle" id="srcKaipanla"></div>
+            <span class="source-dot-label">开盘啦</span>
+          </div>
+        </div>
       </div>
       <div>
         <input type="range" class="opacity-slider" id="opacitySlider" min="30" max="100" value="92" />
@@ -617,6 +645,22 @@ const modeSentiment  = document.getElementById('modeSentiment');
 const modeStock      = document.getElementById('modeStock');
 const sentimentPanel = document.getElementById('sentimentPanel');
 const hotPanel       = document.getElementById('hotPanel');
+const srcTdx         = document.getElementById('srcTdx');
+const srcEastmoney   = document.getElementById('srcEastmoney');
+const srcKaipanla    = document.getElementById('srcKaipanla');
+
+function updateSourceDots(sources) {
+  if (!sources) return;
+  const setDot = (el, ok) => {
+    if (!el) return;
+    el.classList.toggle('ok', !!ok);
+    el.classList.toggle('err', !ok);
+  };
+  // tdx：init 消息里有 sources.tdx，sentiment 里也有
+  if ('tdx' in sources) setDot(srcTdx, sources.tdx);
+  if ('eastmoney' in sources) setDot(srcEastmoney, sources.eastmoney);
+  if ('kaipanla' in sources) setDot(srcKaipanla, sources.kaipanla);
+}
 
 /* ── 工具函数 ── */
 const MARKET_LABELS = { open:'交易中', closed:'已收盘', lunch:'午休', pre:'未开盘', call:'集合竞价' };
@@ -1042,10 +1086,10 @@ function connectWS() {
     alertList.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-title">加载中…</div><div class="empty-desc">正在拉取股票数据</div></div>';
   };
   ws.onmessage = e => { try { const d = JSON.parse(e.data);
-    if (d.type==='init') { alerts=d.alerts||[]; for(const a of alerts){if(a.klines&&a.klines.length)klinesMap[a.id]=a.klines;} if(d.market)updateMarketLabel(d.market); renderList(); }
+    if (d.type==='init') { alerts=d.alerts||[]; for(const a of alerts){if(a.klines&&a.klines.length)klinesMap[a.id]=a.klines;} if(d.market)updateMarketLabel(d.market); if(d.sources)updateSourceDots(d.sources); renderList(); }
     if (d.type==='alerts') { const items=d.items||[],ids=items.map(i=>i.id); for(const a of items){if(a.klines&&a.klines.length)klinesMap[a.id]=a.klines;} alerts=[...items,...alerts].slice(0,200); renderList(ids); alertList.scrollTop=0; }
     if (d.type==='market') updateMarketLabel(d.state);
-    if (d.type==='sentiment') { sentimentData = d.data; renderRightSentiment(d.data); }
+    if (d.type==='sentiment') { sentimentData = d.data; if(d.data.sources)updateSourceDots(d.data.sources); renderRightSentiment(d.data); }
     if (d.type==='screen_results') { if (d.alerts && d.alerts.length > 0) { alerts = d.alerts; } renderList(); }
     if (d.type==='klines') { drawKlineViewer(d.data); }
     if (d.type==='sector_stocks') {

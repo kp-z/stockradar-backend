@@ -747,14 +747,22 @@ def fetch_kaipanla_sectors():
 
 def gen_sentiment_data():
     """生成情绪面板数据（真实数据源）"""
+    sources = {'tdx': False, 'eastmoney': False, 'kaipanla': False}
+
     indices = fetch_index_quotes()
     sh_klines = fetch_sh_klines(20)
+    if indices:
+        sources['tdx'] = True
 
     # 市场宽度：从东方财富获取全市场真实涨跌统计
     breadth = fetch_market_breadth()
+    if breadth.get('up', 0) > 0 or breadth.get('down', 0) > 0:
+        sources['eastmoney'] = True
 
     # 题材涨停排名：从开盘啦获取
     sectors = fetch_kaipanla_sectors()
+    if sectors:
+        sources['kaipanla'] = True
 
     return {
         'indices': indices,
@@ -762,6 +770,7 @@ def gen_sentiment_data():
         'sectors': sectors,
         'history': [],
         'sh_klines': sh_klines,
+        'sources': sources,
     }
 
 def get_market_state():
@@ -845,7 +854,8 @@ async def ws_handler(websocket):
         await websocket.send(json.dumps({
             'type': 'init',
             'alerts': init_alerts,
-            'market': get_market_state()
+            'market': get_market_state(),
+            'sources': {'tdx': tdx_client is not None, 'klines_cache': len(klines_cache) > 0}
         }))
         async for msg in websocket:
             try:
