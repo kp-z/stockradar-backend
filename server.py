@@ -8,6 +8,8 @@ import json
 import time
 import random
 import websockets
+from websockets.asyncio.server import Request, Response
+from websockets.datastructures import Headers
 import os
 import traceback
 import requests
@@ -16,7 +18,7 @@ from datetime import datetime
 # mootdx 通达信数据接口
 from mootdx.quotes import Quotes
 
-WS_PORT = int(os.environ.get('PORT', 8080))
+WS_PORT = int(os.environ.get('PORT', 31749))
 
 # ── 通达信连接 ──
 tdx_client = None
@@ -879,7 +881,10 @@ async def ws_handler(websocket):
                     schemes = data.get('schemes', [])
                     def _do_screen():
                         refresh_klines_cache_if_needed()
-                        quotes = fetch_realtime_quotes() or {}
+                        # 非盘中跳过实时行情（无意义且慢），直接用空 quotes
+                        quotes = {}
+                        if get_market_state() in ('open', 'call'):
+                            quotes = fetch_realtime_quotes() or {}
                         return screen_stocks_by_schemes(schemes, quotes)
                     screen_results = await asyncio.to_thread(_do_screen)
                     await websocket.send(json.dumps({
@@ -891,7 +896,10 @@ async def ws_handler(websocket):
                     schemes = data.get('schemes', [])
                     def _do_screen2():
                         refresh_klines_cache_if_needed()
-                        quotes = fetch_realtime_quotes() or {}
+                        # 非盘中跳过实时行情（无意义且慢），直接用空 quotes
+                        quotes = {}
+                        if get_market_state() in ('open', 'call'):
+                            quotes = fetch_realtime_quotes() or {}
                         return screen_stocks_by_schemes(schemes, quotes)
                     screen_results = await asyncio.to_thread(_do_screen2)
                     await websocket.send(json.dumps({
@@ -969,11 +977,28 @@ async def scan_loop():
 
         await asyncio.sleep(3)
 
-async def health_check(path, request_headers):
-    """处理 HTTP 健康检查请求，让 Railway edge proxy 知道服务在运行"""
-    if path == "/health" or path == "/":
-        return (200, [("Content-Type", "text/plain")], b"StockRadar OK\n")
-    return None  # 其他路径走 WebSocket
+FRONTEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'frontend')
+
+async def health_check(connection, request: Request):
+    """处理 HTTP 请求：非 WebSocket 升级请求返回 HTTP 响应，WebSocket 请求放行"""
+    # 是 WebSocket 升级请求，放行让 websockets 处理
+    upgrade = request.headers.get("Upgrade", "").lower()
+    if upgrade == "websocket":
+        return None
+
+    # 普通 HTTP 请求
+    if request.path == "/health":
+        return Response(200, "OK", Headers({"Content-Type": "text/plain"}), b"StockRadar OK\n")
+    if request.path == "/" or request.path == "/index.html":
+        index_path = os.path.join(FRONTEND_DIR, 'index.html')
+        try:
+            with open(index_path, 'rb') as f:
+                content = f.read()
+            return Response(200, "OK", Headers({"Content-Type": "text/html; charset=utf-8"}), content)
+        except FileNotFoundError:
+            return Response(404, "Not Found", Headers({"Content-Type": "text/plain"}), b"Frontend not found\n")
+    # 其他路径（favicon 等）返回 404
+    return Response(404, "Not Found", Headers({"Content-Type": "text/plain"}), b"Not found\n")
 
 async def main():
     server = await websockets.serve(
