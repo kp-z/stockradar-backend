@@ -1765,7 +1765,17 @@ function connectWS() {
     if (sentimentData) renderRightSentiment(sentimentData); // 立即渲染缓存
     ws.send(JSON.stringify({ action: 'get_sentiment' }));
     // auto-login with saved token
-    if (authToken && cloudSyncEnabled) ws.send(JSON.stringify({ action: 'auth_token', token: authToken }));
+    if (authToken && cloudSyncEnabled) {
+      const overlay = document.getElementById('authOverlay');
+      overlay.style.display = 'flex';
+      document.getElementById('authModalTitle').textContent = '正在验证登录…';
+      document.getElementById('authUsername').style.display = 'none';
+      document.getElementById('authPassword').style.display = 'none';
+      document.getElementById('authLoginBtn').style.display = 'none';
+      document.getElementById('authRegisterBtn').style.display = 'none';
+      document.getElementById('authError').style.display = 'none';
+      ws.send(JSON.stringify({ action: 'auth_token', token: authToken }));
+    }
     // 同步模式通知后端
     ws.send(JSON.stringify({ action: 'set_sync_mode', enabled: cloudSyncEnabled }));
     // ── 强制登录：WS连接后，无token则弹出登录框 ──
@@ -2792,9 +2802,17 @@ function handleAuthResult(d) {
     // 始终同步本地数据到服务端
     if (watchlist.length) saveWatchlist();
     if (d.saved_schemes) {
-      schemes = d.saved_schemes;
+      // 合并：服务端为主，补充本地新增的（未同步的）方案
+      const cloudIds = new Set(d.saved_schemes.map(s => s.id));
+      const localOnly = schemes.filter(s => !cloudIds.has(s.id));
+      schemes = [...d.saved_schemes, ...localOnly];
       localStorage.setItem('stock-radar-schemes', JSON.stringify(schemes));
       renderSchemeBar();
+      renderList();
+      // 若有本地未同步的方案，上传到服务端
+      if (localOnly.length && ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ action: 'sync_schemes', schemes }));
+      }
     } else if (schemes.length) {
       // 服务端无方案，同步本地方案上去
       if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ action: 'sync_schemes', schemes }));
