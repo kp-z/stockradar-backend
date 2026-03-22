@@ -28,6 +28,7 @@ try:
         cloud_save_watchlist, cloud_get_watchlist,
         cloud_save_schemes, cloud_get_schemes,
         enqueue_sync, drain_sync_queue, merge_watchlists,
+        cloud_login_verify, cloud_get_all_users_admin,
     )
     SUPABASE_LOADED = True
 except ImportError:
@@ -51,7 +52,6 @@ def _get_data_dir():
 
 # ── SQLite 用户数据库 ──
 DB_FILE = os.path.join(_get_data_dir(), 'stockradar.db')
-ADMIN_PASSWORD = '9YnHpdbsiDEmLaq4'
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
@@ -101,16 +101,7 @@ def init_db():
     )''')
     cur = conn.execute("SELECT COUNT(*) FROM users WHERE is_admin=1")
     if cur.fetchone()[0] == 0:
-        salt = secrets.token_hex(16)
-        pw_hash = _hash_password(ADMIN_PASSWORD, salt)
-        conn.execute("INSERT INTO users (username, password_hash, salt, is_admin) VALUES (?, ?, ?, 1)",
-                     ('admin', pw_hash, salt))
-        print("[DB] 创建默认管理员 admin")
-    # 每次启动强制同步 admin 密码
-    new_salt = secrets.token_hex(16)
-    new_hash = _hash_password(ADMIN_PASSWORD, new_salt)
-    conn.execute("UPDATE users SET password_hash=?, salt=? WHERE username='admin'", (new_hash, new_salt))
-    conn.execute("UPDATE users SET is_admin=1 WHERE username='kp' AND is_admin=0")
+        print("[DB] 无本地管理员，首次登录后将从 Supabase 同步")
     conn.commit()
     conn.close()
 
@@ -118,11 +109,19 @@ def _hash_password(password, salt):
     return hashlib.sha256((password + salt).encode()).hexdigest()
 
 def create_user(username, password):
+    if not (SUPABASE_LOADED and is_available()):
+        return False, '服务不可用，无法注册（需要网络连接）'
+    salt = secrets.token_hex(16)
+    pw_hash = _hash_password(password, salt)
+    cloud_uid = cloud_register(username, pw_hash, salt)
+    if cloud_uid is None:
+        return False, '注册失败，用户名可能已存在'
     conn = sqlite3.connect(DB_FILE)
     try:
-        salt = secrets.token_hex(16)
-        pw_hash = _hash_password(password, salt)
-        conn.execute("INSERT INTO users (username, password_hash, salt) VALUES (?, ?, ?)", (username, pw_hash, salt))
+        conn.execute(
+            "INSERT INTO users (username, password_hash, salt, cloud_user_id) VALUES (?, '', '', ?)",
+            (username, cloud_uid),
+        )
         conn.commit()
         return True, None
     except sqlite3.IntegrityError:
@@ -131,15 +130,30 @@ def create_user(username, password):
         conn.close()
 
 def verify_user(username, password):
-    conn = sqlite3.connect(DB_FILE)
-    row = conn.execute("SELECT id, password_hash, salt, is_admin, cloud_user_id FROM users WHERE username=?", (username,)).fetchone()
-    conn.close()
-    if not row:
+    if not (SUPABASE_LOADED and is_available()):
         return None
-    uid, pw_hash, salt, is_admin, cloud_uid = row
-    if _hash_password(password, salt) == pw_hash:
-        return {'id': uid, 'username': username, 'is_admin': bool(is_admin), 'cloud_user_id': cloud_uid}
-    return None
+    cloud_user = cloud_login_verify(username, password)
+    if not cloud_user:
+        return None
+    # 确保本地有该用户记录（用于 session 关联），同步 is_admin
+    conn = sqlite3.connect(DB_FILE)
+    row = conn.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
+    if not row:
+        conn.execute(
+            "INSERT INTO users (username, password_hash, salt, cloud_user_id, is_admin) VALUES (?, '', '', ?, ?)",
+            (username, cloud_user['cloud_id'], 1 if cloud_user['is_admin'] else 0),
+        )
+        conn.commit()
+        row = conn.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
+    else:
+        conn.execute(
+            "UPDATE users SET cloud_user_id=?, is_admin=? WHERE username=?",
+            (cloud_user['cloud_id'], 1 if cloud_user['is_admin'] else 0, username),
+        )
+        conn.commit()
+    local_id = row[0]
+    conn.close()
+    return {'id': local_id, 'username': username, 'is_admin': cloud_user['is_admin'], 'cloud_user_id': cloud_user['cloud_id']}
 
 def create_session(user_id):
     token = secrets.token_urlsafe(32)
@@ -1377,29 +1391,11 @@ async def ws_handler(websocket):
                             user = await asyncio.to_thread(verify_user, username, password)
                             token = await asyncio.to_thread(create_session, user['id'])
                             auth_user = user
+                            if user.get('cloud_user_id'):
+                                expires = (datetime.now() + timedelta(days=7)).isoformat()
+                                asyncio.create_task(asyncio.to_thread(cloud_create_session, user['cloud_user_id'], token, expires))
                             await websocket.send(json.dumps({'type': 'auth_result', 'success': True, 'token': token, 'user': {'id': user['id'], 'username': user['username'], 'is_admin': user['is_admin']}}))
                             print(f"[Auth] 新用户注册: {username}")
-                            # ── 云端同步注册 ──
-                            if SUPABASE_LOADED and is_available():
-                                try:
-                                    # 从本地 DB 获取 hash 和 salt
-                                    _conn = sqlite3.connect(DB_FILE)
-                                    _row = _conn.execute("SELECT password_hash, salt FROM users WHERE id=?", (user['id'],)).fetchone()
-                                    _conn.close()
-                                    if _row:
-                                        cloud_uid = await asyncio.to_thread(cloud_register, username, _row[0], _row[1])
-                                        if cloud_uid:
-                                            _conn2 = sqlite3.connect(DB_FILE)
-                                            _conn2.execute("UPDATE users SET cloud_user_id=? WHERE id=?", (cloud_uid, user['id']))
-                                            _conn2.commit()
-                                            _conn2.close()
-                                            auth_user['cloud_user_id'] = cloud_uid
-                                            expires = (datetime.now() + timedelta(days=7)).isoformat()
-                                            await asyncio.to_thread(cloud_create_session, cloud_uid, token, expires)
-                                            print(f"[Supabase] 用户已同步到云端: {username}")
-                                except Exception as e:
-                                    print(f"[Supabase] 注册同步失败: {e}")
-                                    enqueue_sync(DB_FILE, 'register', {'username': username, 'pw_hash': _row[0], 'salt': _row[1]})
                         else:
                             await websocket.send(json.dumps({'type': 'auth_result', 'success': False, 'error': err}))
                 elif data.get('action') == 'login':
@@ -1473,7 +1469,7 @@ async def ws_handler(websocket):
                             asyncio.create_task(asyncio.to_thread(cloud_save_schemes, auth_user['cloud_user_id'], json.dumps(sc_data)))
                 elif data.get('action') == 'admin_get_users':
                     if auth_user and auth_user.get('is_admin'):
-                        users_data = await asyncio.to_thread(get_all_users_admin)
+                        users_data = await asyncio.to_thread(cloud_get_all_users_admin)
                         await websocket.send(json.dumps({'type': 'admin_users', 'users': users_data}))
                 elif data.get('action') == 'admin_set_sectors':
                     global ADMIN_CUSTOM_SECTORS

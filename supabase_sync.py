@@ -1,10 +1,11 @@
 """
 Supabase 云端同步模块
 使用 requests 直接调 Supabase REST API (PostgREST)，避免 SDK 版本冲突。
-本地 SQLite 始终是主存储，本模块负责异步同步到云端。
+密码验证和用户管理均走 Supabase，本地 SQLite 只缓存当前用户的 session 和数据。
 """
 
 import os
+import hashlib
 import json
 import sqlite3
 import logging
@@ -356,4 +357,73 @@ def merge_watchlists(local, cloud):
         if code not in seen:
             seen.add(code)
             merged.append(code)
+    return merged
+
+
+# ── 密码验证（Supabase 为主） ──
+
+def cloud_login_verify(username, password):
+    """从 Supabase 验证用户名+密码，返回用户信息或 None。"""
+    if not is_available():
+        return None
+    try:
+        result = _api("GET", "users", params={
+            "select": "id,username,salt,password_hash,is_admin",
+            "username": f"eq.{username}",
+        })
+        if not result:
+            return None
+        row = result[0]
+        expected = hashlib.sha256((password + row['salt']).encode()).hexdigest()
+        if expected != row['password_hash']:
+            return None
+        return {
+            'cloud_id': row['id'],
+            'username': row['username'],
+            'is_admin': bool(row.get('is_admin', False)),
+        }
+    except Exception as e:
+        logger.warning(f"云端密码验证失败: {e}")
+        return None
+
+
+# ── 管理员：获取所有用户数据 ──
+
+def cloud_get_all_users_admin():
+    """获取所有用户及其 watchlist/schemes（仅管理员调用）。"""
+    if not is_available():
+        return []
+    try:
+        users = _api("GET", "users", params={
+            "select": "id,username,is_admin,created_at,last_login",
+        })
+        result = []
+        for u in (users or []):
+            uid = u['id']
+            wl_rows = _api("GET", "user_watchlists", params={
+                "select": "stock_code",
+                "user_id": f"eq.{uid}",
+                "order": "added_at",
+            })
+            sc_rows = _api("GET", "user_schemes", params={
+                "select": "schemes_json",
+                "user_id": f"eq.{uid}",
+            })
+            schemes = None
+            if sc_rows:
+                raw = sc_rows[0].get('schemes_json')
+                schemes = raw if isinstance(raw, list) else (json.loads(raw) if raw else None)
+            result.append({
+                'id': uid,
+                'username': u['username'],
+                'is_admin': bool(u.get('is_admin')),
+                'created_at': u.get('created_at'),
+                'last_login': u.get('last_login'),
+                'watchlist': [r['stock_code'] for r in (wl_rows or [])],
+                'schemes': schemes,
+            })
+        return result
+    except Exception as e:
+        logger.warning(f"云端获取用户列表失败: {e}")
+        return []
     return merged
