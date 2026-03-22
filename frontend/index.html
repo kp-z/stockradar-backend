@@ -677,7 +677,7 @@
     .matched-tag { display:inline-block;font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(99,102,241,0.15);color:var(--accent);font-weight:600;margin-right:2px; }
     .matched-none { font-size:9px;color:var(--muted); }
     .auth-overlay {
-      position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.75);z-index:290;
+      position:absolute;top:0;left:0;right:0;bottom:0;background:rgb(18,18,24);z-index:290;
       display:flex;align-items:center;justify-content:center;
     }
     .auth-modal {
@@ -697,6 +697,7 @@
     .auth-btn.primary { background:var(--accent);color:white; }
     .auth-btn.secondary { background:rgba(255,255,255,0.06);color:var(--muted); }
     .auth-btn:hover { opacity:0.85; }
+    .auth-btn:disabled { opacity:0.5; cursor:not-allowed; }
     .admin-panel {
       position:absolute;top:0;left:0;right:0;bottom:0;background:var(--bg);z-index:280;
       display:flex;flex-direction:column;
@@ -725,7 +726,7 @@
         <span id="authUserLabel" style="font-size:10px;color:var(--accent);display:none;align-self:center;cursor:pointer;" title="点击管理"></span>
         <button class="header-btn" id="adminHeaderBtn" title="管理后台" style="display:none;width:24px;height:24px;font-size:11px;">🛠</button>
         <button class="header-btn" id="authBtn" title="登录" style="width:24px;height:24px;font-size:12px;">👤</button>
-        <span style="font-size:9px;color:var(--muted);opacity:0.6;align-self:center;">v1.5.0</span>
+        <span style="font-size:9px;color:var(--muted);opacity:0.6;align-self:center;">v1.6.0</span>
       </div>
     </div>
     <div class="left-column">
@@ -2757,7 +2758,26 @@ function bindSettingsEvents() {
 }
 
 /* ── 账户登录系统 ── */
+function setAuthLoading(loading) {
+  const loginBtn = document.getElementById('authLoginBtn');
+  const regBtn = document.getElementById('authRegisterBtn');
+  const uInput = document.getElementById('authUsername');
+  const pInput = document.getElementById('authPassword');
+  if (!loginBtn) return;
+  loginBtn.disabled = loading;
+  regBtn.disabled = loading;
+  uInput.disabled = loading;
+  pInput.disabled = loading;
+  if (loading) {
+    loginBtn.dataset.origText = loginBtn.textContent;
+    loginBtn.textContent = '请稍候…';
+  } else {
+    loginBtn.textContent = loginBtn.dataset.origText || '登录';
+  }
+}
+
 function handleAuthResult(d) {
+  setAuthLoading(false);
   const errorEl = document.getElementById('authError');
   if (d.success) {
     authUser = d.user;
@@ -2859,6 +2879,7 @@ document.getElementById('authLoginBtn')?.addEventListener('click', () => {
   const p = document.getElementById('authPassword').value;
   if (!u || !p) { document.getElementById('authError').textContent = '请填写用户名和密码'; return; }
   if (!ws || ws.readyState !== WebSocket.OPEN) { document.getElementById('authError').textContent = '正在连接服务器，请稍候...'; return; }
+  setAuthLoading(true);
   ws.send(JSON.stringify({ action: 'login', username: u, password: p }));
 });
 
@@ -2867,6 +2888,7 @@ document.getElementById('authRegisterBtn')?.addEventListener('click', () => {
   const p = document.getElementById('authPassword').value;
   if (!u || !p || p.length < 4) { document.getElementById('authError').textContent = '用户名不能为空，密码至少4位'; return; }
   if (!ws || ws.readyState !== WebSocket.OPEN) { document.getElementById('authError').textContent = '正在连接服务器，请稍候...'; return; }
+  setAuthLoading(true);
   ws.send(JSON.stringify({ action: 'register', username: u, password: p }));
 });
 

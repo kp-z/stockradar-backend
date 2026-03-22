@@ -97,7 +97,7 @@ def _api(method, path, data=None, params=None):
 # ── 用户操作 ──
 
 def cloud_register(username, password_hash, salt):
-    """在 Supabase 创建用户，返回云端 UUID 或 None。"""
+    """在 Supabase 创建用户，返回云端 UUID 或 None。用户名重复时抛出 ValueError。"""
     if not is_available():
         return None
     try:
@@ -110,6 +110,11 @@ def cloud_register(username, password_hash, salt):
             uid = result[0]["id"]
             logger.info(f"云端用户创建成功: {username} -> {uid}")
             return uid
+        return None
+    except requests.exceptions.HTTPError as e:
+        if e.response is not None and e.response.status_code in (409, 422, 400):
+            raise ValueError("用户名已存在")
+        logger.warning(f"云端注册失败: {e}")
         return None
     except Exception as e:
         logger.warning(f"云端注册失败: {e}")

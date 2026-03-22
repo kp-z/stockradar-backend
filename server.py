@@ -113,9 +113,12 @@ def create_user(username, password):
         return False, '服务不可用，无法注册（需要网络连接）'
     salt = secrets.token_hex(16)
     pw_hash = _hash_password(password, salt)
-    cloud_uid = cloud_register(username, pw_hash, salt)
+    try:
+        cloud_uid = cloud_register(username, pw_hash, salt)
+    except ValueError as e:
+        return False, str(e)
     if cloud_uid is None:
-        return False, '注册失败，用户名可能已存在'
+        return False, '注册失败，请稍后重试'
     conn = sqlite3.connect(DB_FILE)
     try:
         conn.execute(
