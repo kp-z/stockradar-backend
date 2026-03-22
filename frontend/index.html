@@ -59,7 +59,7 @@
     .chart-mode-btn.active { background: var(--accent); border-color: var(--accent); color: white; }
 
     .scheme-bar {
-      display: flex; gap: 4px; padding: 2px 10px 6px; overflow-x: auto; scrollbar-width: none;
+      display: flex; gap: 4px; padding: 2px 10px 6px; overflow-x: auto; scrollbar-width: none; align-items: center; flex-wrap: nowrap;
     }
     .scheme-bar::-webkit-scrollbar { display: none; }
     .scheme-pill {
@@ -532,7 +532,6 @@
       </div>
       <div class="header-actions">
         <span style="font-size:9px;color:var(--muted);opacity:0.6;align-self:center;">v1.2.0</span>
-        <button class="header-btn" id="settingsBtn" title="选股方案">☰</button>
       </div>
     </div>
     <div class="scheme-bar" id="schemeBar"></div>
@@ -717,7 +716,6 @@ const alertList     = document.getElementById('alertList');
 const marketStatus  = document.getElementById('marketStatus');
 const refreshStatus = document.getElementById('refreshStatus');
 const refreshDot    = document.getElementById('refreshDot');
-const settingsBtn   = document.getElementById('settingsBtn');
 const settingsPanel = document.getElementById('settingsPanel');
 const schemeBar     = document.getElementById('schemeBar');
 const pinBtn        = document.getElementById('pinBtn');
@@ -854,11 +852,6 @@ function drawM(ctx,W,H,bp,cp) {
 }
 
 /* ── 事件绑定 ── */
-settingsBtn?.addEventListener('click', () => {
-  settingsOpen = !settingsOpen;
-  settingsPanel.classList.toggle('active', settingsOpen);
-  if (settingsOpen) renderSettings();
-});
 let sentimentData = null;
 
 function bindSentimentRefreshBtn() {
@@ -1298,6 +1291,7 @@ function renderSchemeBar() {
     const cls = s.enabled ? 'scheme-pill active' : 'scheme-pill';
     return `<button class="${cls}" data-id="${s.id}">${esc(s.name)}</button>`;
   }).join('');
+  html += `<button class="header-btn" id="settingsBtn" title="选股方案" style="font-size:14px;padding:2px 6px;flex-shrink:0;margin-left:auto;">☰</button>`;
 
   schemeBar.innerHTML = html;
   schemeBar.querySelectorAll('.scheme-pill').forEach(btn => {
@@ -1305,6 +1299,12 @@ function renderSchemeBar() {
       const sc = schemes.find(x => x.id === btn.dataset.id);
       if (sc) { sc.enabled = !sc.enabled; saveSchemes(); renderSchemeBar(); renderList(); }
     });
+  });
+  const sBtn = document.getElementById('settingsBtn');
+  if (sBtn) sBtn.addEventListener('click', () => {
+    settingsOpen = !settingsOpen;
+    settingsPanel.classList.toggle('active', settingsOpen);
+    if (settingsOpen) renderSettings();
   });
 }
 
