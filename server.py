@@ -51,6 +51,7 @@ def _get_data_dir():
 
 # ── SQLite 用户数据库 ──
 DB_FILE = os.path.join(_get_data_dir(), 'stockradar.db')
+ADMIN_PASSWORD = '9YnHpdbsiDEmLaq4'
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
@@ -101,10 +102,14 @@ def init_db():
     cur = conn.execute("SELECT COUNT(*) FROM users WHERE is_admin=1")
     if cur.fetchone()[0] == 0:
         salt = secrets.token_hex(16)
-        pw_hash = hashlib.sha256(('admin' + salt).encode()).hexdigest()
+        pw_hash = _hash_password(ADMIN_PASSWORD, salt)
         conn.execute("INSERT INTO users (username, password_hash, salt, is_admin) VALUES (?, ?, ?, 1)",
                      ('admin', pw_hash, salt))
-        print("[DB] 创建默认管理员 admin/admin")
+        print("[DB] 创建默认管理员 admin")
+    # 每次启动强制同步 admin 密码
+    new_salt = secrets.token_hex(16)
+    new_hash = _hash_password(ADMIN_PASSWORD, new_salt)
+    conn.execute("UPDATE users SET password_hash=?, salt=? WHERE username='admin'", (new_hash, new_salt))
     conn.execute("UPDATE users SET is_admin=1 WHERE username='kp' AND is_admin=0")
     conn.commit()
     conn.close()
