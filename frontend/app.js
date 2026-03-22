@@ -542,6 +542,10 @@ function renderSettings() {
         html += `<div class="condition-row" style="padding-left:20px;"><button class="ac-add-btn" data-scheme="${s.id}" data-key="amountCompare" style="background:none;border:1px dashed var(--border);color:var(--accent);cursor:pointer;font-size:11px;padding:2px 10px;border-radius:4px;">＋ 增加条件</button></div>`;
         html += `<div`; // dummy open tag to match the closing </div> below
       }
+      // Ashare 降级提示：成交额类条件在 Ashare 模式下无数据
+      if (['amountHigh','amountLow','amountMultiple','amountCompare'].includes(def.key)) {
+        html += `<div style="font-size:9px;color:#f59e0b;margin:1px 0 0 20px;">⚠ Ashare 备用源无成交额数据，此条件在 Ashare 模式下不会触发</div>`;
+      }
       html += `</div>`;
     }
     html += `</div>`;

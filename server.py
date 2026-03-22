@@ -18,7 +18,26 @@ from datetime import datetime
 # mootdx 通达信数据接口
 from mootdx.quotes import Quotes
 
+# 可选：Ashare 备用数据源（新浪/腾讯双核心）
+try:
+    from ashare_adapter import fetch_klines_ashare, preload_all_klines_ashare
+    from ashare_adapter import is_available as ashare_available
+    print(f"[Ashare] 适配层已加载, 可用={ashare_available()}")
+except ImportError:
+    def fetch_klines_ashare(code, days=150): return []
+    def preload_all_klines_ashare(stocks, days=150): return {}
+    def ashare_available(): return False
+
 WS_PORT = int(os.environ.get('PORT', 31749))
+
+# ── 运行时配置（可由前端 WS 实时更新） ──
+APP_CONFIG = {
+    'sector_source': 'kaipanla',   # 'kaipanla' | 'eastmoney'
+    'kaipanla_user_id': '0',
+    'kaipanla_token': '0',
+    'ashare_enabled': True,        # 是否启用 Ashare 备用源
+    'ashare_as_primary': False,    # True = Ashare 作为K线主力（替换TDX）
+}
 
 # ── 通达信连接 ──
 tdx_client = None
@@ -121,6 +140,7 @@ def preload_all_klines(days=150):
     client = get_tdx()
     if not client:
         print("[预加载] 通达信未连接，跳过")
+        _preload_ashare_fallback(days)
         return
     loaded = 0
     for code, name in STOCKS:
@@ -146,6 +166,16 @@ def preload_all_klines(days=150):
     print(f"[预加载] 完成，共加载 {loaded}/{len(STOCKS)} 只股票的 {days} 日K线")
     # 保存到文件
     save_klines_to_file()
+
+    # Ashare fallback：TDX 未连接时用 Ashare 补充
+def _preload_ashare_fallback(days=150):
+    """TDX 不可用时用 Ashare 批量预加载K线"""
+    if APP_CONFIG.get('ashare_enabled') and ashare_available():
+        print("[预加载] 通达信不可用，切换 Ashare 备用源...")
+        ashare_data = preload_all_klines_ashare(STOCKS, days)
+        if ashare_data:
+            klines_cache.update(ashare_data)
+            save_klines_to_file()
 
 def trim_klines_to_150():
     """修剪每只股票的K线数据，只保留最近150天"""
@@ -550,9 +580,11 @@ def detect_alerts(quotes):
     return alerts
 
 def fetch_stock_klines(code, days=60):
-    """从通达信获取个股日K线"""
+    """从通达信获取个股日K线，TDX 失败时 fallback 到 Ashare"""
     client = get_tdx()
     if not client:
+        if APP_CONFIG.get('ashare_enabled') and ashare_available():
+            return fetch_klines_ashare(code, days)
         return []
     try:
         market = code_to_market(code)
@@ -575,33 +607,54 @@ def fetch_stock_klines(code, days=60):
     except Exception as e:
         print(f"[TDX] 获取K线 {code} 失败: {e}")
         reconnect_tdx()
+        if APP_CONFIG.get('ashare_enabled') and ashare_available():
+            return fetch_klines_ashare(code, days)
         return []
 
 def fetch_index_quotes():
-    """获取沪深指数"""
+    """获取沪深指数，TDX 优先，失败时 fallback 到东财"""
     client = get_tdx()
-    if not client:
-        return []
+    if client:
+        try:
+            df = client.quotes([(1, '999999'), (0, '399001'), (1, '000300')])
+            if df is not None and not df.empty:
+                names = {'999999': '上证指数', '399001': '深证成指', '000300': '沪深300'}
+                result = []
+                for _, row in df.iterrows():
+                    code = str(row.get('code', '')).zfill(6)
+                    price = float(row.get('price', 0))
+                    last_close = float(row.get('last_close', 0))
+                    change = round((price - last_close) / last_close * 100, 2) if last_close > 0 else 0
+                    result.append({'name': names.get(code, code), 'price': round(price, 2), 'change': change})
+                return result
+        except Exception as e:
+            print(f"[TDX] 获取指数失败，尝试东财 fallback: {e}")
+
+    # Fallback：东财指数接口（非交易时段也返回最新价）
     try:
-        # 上证指数(1.999999), 深证成指(0.399001), 沪深300(1.000300)
-        df = client.quotes([(1, '999999'), (0, '399001'), (1, '000300')])
-        if df is None or df.empty:
-            return []
-        names = {'999999': '上证指数', '399001': '深证成指', '000300': '沪深300'}
+        url = 'https://push2.eastmoney.com/api/qt/ulist.np/get'
+        params = {
+            'fltt': 2, 'invt': 2,
+            'fields': 'f2,f3,f12,f14',
+            'secids': '1.000001,0.399001,1.000300',
+            'ut': 'fa5fd1943c7b386f172d6893dbfba10b',
+        }
+        resp = requests.get(url, params=params,
+                            headers={'User-Agent': 'Mozilla/5.0', 'Referer': 'https://www.eastmoney.com/'},
+                            timeout=8)
+        diff = resp.json().get('data', {}).get('diff', [])
         result = []
-        for _, row in df.iterrows():
-            code = str(row.get('code', '')).zfill(6)
-            price = float(row.get('price', 0))
-            last_close = float(row.get('last_close', 0))
-            change = round((price - last_close) / last_close * 100, 2) if last_close > 0 else 0
-            result.append({
-                'name': names.get(code, code),
-                'price': round(price, 2),
-                'change': change,
-            })
+        for item in (diff or []):
+            price = float(item.get('f2', 0))
+            change = float(item.get('f3', 0))
+            name = item.get('f14', '')
+            if price > 0:
+                result.append({'name': name, 'price': round(price, 2), 'change': round(change, 2)})
+        if result:
+            print(f"[东财] 指数 fallback 成功，获取 {len(result)} 条")
         return result
     except Exception as e:
-        print(f"[TDX] 获取指数失败: {e}")
+        print(f"[东财] 指数 fallback 失败: {e}")
         return []
 
 def fetch_sh_klines(days=20):
@@ -712,8 +765,8 @@ def fetch_kaipanla_sectors():
             'a': 'StrengthRank',
             'st': 'ZTStock',
             'ot': 'desc',
-            'UserID': '0',
-            'Token': '0',
+            'UserID': APP_CONFIG['kaipanla_user_id'],
+            'Token':  APP_CONFIG['kaipanla_token'],
             'PhoneOSNew': '1',
             'DeviceID': 'web',
             'VerSion': '5.8.0.2',
@@ -745,9 +798,47 @@ def fetch_kaipanla_sectors():
         traceback.print_exc()
         return []
 
+def fetch_eastmoney_sectors():
+    """从东方财富获取概念板块涨跌排名（题材备用数据源）"""
+    try:
+        import time as _time
+        url = 'https://push2.eastmoney.com/api/qt/clist/get'
+        params = {
+            'pn': 1, 'pz': 15, 'po': 1, 'np': 1, 'fltt': 2, 'invt': 2,
+            'fid': 'f3',
+            'fs': 'b:BK0717',
+            'fields': 'f2,f3,f12,f14,f128',
+            '_': int(_time.time() * 1000),
+        }
+        headers = {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://quote.eastmoney.com/'}
+        resp = requests.get(url, params=params, headers=headers, timeout=8)
+        resp_json = resp.json()
+        data = resp_json.get('data') or {}
+        items = data.get('diff') or []
+        if not items:
+            print(f"[东财板块] 非交易时段或无数据（rc={resp_json.get('rc', '?')}）")
+        sectors = []
+        for item in (items or [])[:10]:
+            name = item.get('f14', '')
+            chg  = item.get('f3', 0)
+            leader = item.get('f128', '')
+            if name:
+                sectors.append({
+                    'name': name,
+                    'change': round(float(chg), 2) if chg else 0,
+                    'isLimitCount': False,
+                    'leader': leader,
+                })
+        if sectors:
+            print(f"[东财板块] 获取到 {len(sectors)} 个概念板块")
+        return sectors
+    except Exception as e:
+        print(f"[东财板块] 获取失败: {e}")
+        return []
+
 def gen_sentiment_data():
     """生成情绪面板数据（真实数据源）"""
-    sources = {'tdx': False, 'eastmoney': False, 'kaipanla': False}
+    sources = {'tdx': False, 'eastmoney': False, 'kaipanla': False, 'ashare': ashare_available()}
 
     indices = fetch_index_quotes()
     sh_klines = fetch_sh_klines(20)
@@ -759,10 +850,16 @@ def gen_sentiment_data():
     if breadth.get('up', 0) > 0 or breadth.get('down', 0) > 0:
         sources['eastmoney'] = True
 
-    # 题材涨停排名：从开盘啦获取
-    sectors = fetch_kaipanla_sectors()
-    if sectors:
-        sources['kaipanla'] = True
+    # 题材涨停排名：按配置选数据源
+    sector_source = APP_CONFIG.get('sector_source', 'kaipanla')
+    if sector_source == 'eastmoney':
+        sectors = fetch_eastmoney_sectors()
+        if sectors:
+            sources['eastmoney'] = True
+    else:
+        sectors = fetch_kaipanla_sectors()
+        if sectors:
+            sources['kaipanla'] = True
 
     return {
         'indices': indices,
@@ -855,7 +952,7 @@ async def ws_handler(websocket):
             'type': 'init',
             'alerts': init_alerts,
             'market': get_market_state(),
-            'sources': {'tdx': tdx_client is not None, 'klines_cache': len(klines_cache) > 0}
+            'sources': {'tdx': tdx_client is not None, 'klines_cache': len(klines_cache) > 0, 'ashare': ashare_available(), 'ashare_enabled': APP_CONFIG.get('ashare_enabled', False)}
         }))
         async for msg in websocket:
             try:
@@ -886,6 +983,21 @@ async def ws_handler(websocket):
                         'type': 'sentiment',
                         'data': sentiment
                     }))
+                elif data.get('action') == 'update_config':
+                    cfg = data.get('config', {})
+                    if isinstance(cfg, dict):
+                        key_map = {
+                            'sectorSource':   'sector_source',
+                            'kaipanlaUserId': 'kaipanla_user_id',
+                            'kaipanlaToken':  'kaipanla_token',
+                            'ashareEnabled':  'ashare_enabled',
+                            'ashareAsPrimary': 'ashare_as_primary',
+                        }
+                        for fe_key, be_key in key_map.items():
+                            if fe_key in cfg:
+                                APP_CONFIG[be_key] = str(cfg[fe_key])
+                        uid_preview = APP_CONFIG['kaipanla_user_id']
+                        print(f"[配置] 数据源={APP_CONFIG['sector_source']}, UserID={uid_preview[:4]}***")
                 elif data.get('action') == 'update_schemes':
                     # 收到方案后立即执行选股（阻塞调用放线程池）
                     schemes = data.get('schemes', [])
@@ -1067,7 +1179,22 @@ async def main():
                         trim_klines_to_150()
                         save_klines_to_file()
                 else:
-                    print("[补充] 通达信不可用，使用本地缓存数据")
+                    print("[补充] 通达信不可用，尝试 Ashare 补充最新K线...")
+                    if APP_CONFIG.get('ashare_enabled') and ashare_available():
+                        ashare_data = preload_all_klines_ashare(STOCKS, 5)
+                        for c, new_klines in ashare_data.items():
+                            existing = klines_cache.get(c, [])
+                            existing_dates = {k['date'] for k in existing}
+                            for k in new_klines:
+                                if k['date'] not in existing_dates:
+                                    existing.append(k)
+                            existing.sort(key=lambda k: k['date'])
+                            klines_cache[c] = existing[-150:]
+                        if ashare_data:
+                            save_klines_to_file()
+                            print(f"[补充] Ashare 补充了 {len(ashare_data)} 只股票的最新K线")
+                    else:
+                        print("[补充] 使用本地缓存数据")
             except Exception as e:
                 print(f"[补充] 补充K线失败: {e}")
         await asyncio.to_thread(_sync_update)

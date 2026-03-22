@@ -328,6 +328,48 @@
       border-radius: 50%; background: var(--accent); cursor: pointer;
     }
 
+    /* ── 配置弹窗 ── */
+    .config-modal {
+      display: none; position: absolute;
+      bottom: 40px; right: 8px;
+      width: 270px;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 14px 16px;
+      z-index: 200; box-shadow: 0 8px 32px rgba(0,0,0,0.55);
+    }
+    .config-modal.active { display: block; }
+    .config-modal-title { font-size: 12px; font-weight: 700; margin-bottom: 12px; color: var(--text); }
+    .config-section { margin-bottom: 10px; }
+    .config-label { font-size: 10px; color: var(--muted); margin-bottom: 5px; }
+    .config-radio-group { display: flex; gap: 6px; }
+    .config-radio-btn {
+      flex: 1; padding: 5px 0; border-radius: 7px;
+      border: 1px solid var(--border); background: transparent;
+      color: var(--muted); font-size: 11px; font-weight: 600; cursor: pointer;
+      transition: all 0.15s;
+    }
+    .config-radio-btn.active {
+      background: rgba(99,102,241,0.15);
+      border-color: var(--accent, #6366f1); color: var(--text);
+    }
+    .config-input-group { display: flex; flex-direction: column; gap: 5px; transition: opacity 0.2s; }
+    .config-input-group.disabled { opacity: 0.35; pointer-events: none; }
+    .config-field { display: flex; align-items: center; gap: 6px; }
+    .config-field-label { font-size: 10px; color: var(--muted); min-width: 44px; }
+    .config-text-input {
+      flex: 1; background: rgba(255,255,255,0.06);
+      border: 1px solid var(--border); color: var(--text);
+      font-size: 11px; padding: 4px 8px; border-radius: 6px; outline: none;
+    }
+    .config-text-input:focus { border-color: var(--accent, #6366f1); }
+    .config-save-btn {
+      width: 100%; margin-top: 10px; padding: 7px;
+      background: rgba(99,102,241,0.15); border: 1px solid var(--accent, #6366f1);
+      color: var(--accent, #6366f1); font-size: 12px; font-weight: 700;
+      border-radius: 7px; cursor: pointer;
+    }
+    .config-save-btn:hover { background: rgba(99,102,241,0.28); }
+
     .app { display: flex; flex-direction: column; height: 100vh; }
     .empty-state {
       display: flex; flex-direction: column; align-items: center;
@@ -489,9 +531,7 @@
         </div>
       </div>
       <div class="header-actions">
-        <button class="header-btn" id="settingsBtn" title="设置">⚙️</button>
-        <button class="header-btn" id="refreshBtn" title="刷新">🔄</button>
-        <a href="index.html" class="header-btn" title="返回首页" style="text-decoration:none;font-size:14px;">🏠</a>
+        <button class="header-btn" id="settingsBtn" title="选股方案">☰</button>
       </div>
     </div>
     <div class="scheme-bar" id="schemeBar"></div>
@@ -524,6 +564,9 @@
       </div>
     </div>
     <div class="right-sentiment" id="rightSentiment">
+      <div style="display:flex;justify-content:flex-end;padding:2px 0 4px;">
+        <button class="header-btn" id="sentimentRefreshBtn" title="刷新情绪数据" style="width:22px;height:22px;font-size:11px;">↻</button>
+      </div>
       <div style="color:var(--muted);font-size:11px;text-align:center;padding:8px;">📊 情绪数据加载中…</div>
     </div>
     </div><!-- /right-panel -->
@@ -546,11 +589,48 @@
             <div class="source-dot-circle" id="srcKaipanla"></div>
             <span class="source-dot-label">开盘啦</span>
           </div>
+          <div class="source-dot" title="Ashare (新浪/腾讯)">
+            <div class="source-dot-circle" id="srcAshare"></div>
+            <span class="source-dot-label">Ashare</span>
+          </div>
         </div>
       </div>
-      <div>
+      <div style="display:flex;align-items:center;gap:6px;">
         <input type="range" class="opacity-slider" id="opacitySlider" min="30" max="100" value="92" />
+        <button class="header-btn" id="configBtn" title="项目设置" style="font-size:14px;">⚙</button>
       </div>
+    </div>
+    <div class="config-modal" id="configModal">
+      <div class="config-modal-title">项目设置</div>
+      <div class="config-section">
+        <div class="config-label">题材数据来源</div>
+        <div class="config-radio-group">
+          <button class="config-radio-btn active" id="cfgSrcKpl">开盘啦</button>
+          <button class="config-radio-btn" id="cfgSrcEm">东方财富</button>
+        </div>
+      </div>
+      <div class="config-section" style="margin-top:10px;">
+        <div class="config-label">K线备用数据源</div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:4px;">
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text);cursor:pointer;">
+            <input type="checkbox" id="cfgAshareEnabled" style="accent-color:var(--accent);" />
+            启用 Ashare 备用源
+          </label>
+        </div>
+        <div style="font-size:9px;color:var(--muted);margin-top:3px;">通达信不可用时自动切换到 Ashare（新浪/腾讯），成交额类条件将不可用</div>
+      </div>
+      <div class="config-input-group" id="kaipanlaInputs">
+        <div class="config-label">开盘啦账号（留空用游客模式）</div>
+        <div class="config-field">
+          <span class="config-field-label">UserID</span>
+          <input class="config-text-input" id="cfgUserId" placeholder="输入 UserID" />
+        </div>
+        <div class="config-field">
+          <span class="config-field-label">Token</span>
+          <input class="config-text-input" id="cfgToken" placeholder="输入 Token" type="password" />
+        </div>
+      </div>
+      <button class="config-save-btn" id="configSaveBtn">保存并同步</button>
     </div>
   </div>
   <script>
@@ -618,6 +698,10 @@ const CONDITION_DEFS = [
 
 /* ── 状态 ── */
 let schemes = JSON.parse(localStorage.getItem('stock-radar-schemes')) || JSON.parse(JSON.stringify(DEFAULT_SCHEMES));
+
+/* ── 项目配置 ── */
+const DEFAULT_APP_CONFIG = { sectorSource: 'kaipanla', kaipanlaUserId: '0', kaipanlaToken: '0', ashareEnabled: true, ashareAsPrimary: false };
+let appConfig = { ...DEFAULT_APP_CONFIG, ...JSON.parse(localStorage.getItem('stock-radar-config') || '{}') };
 let alerts = [];
 let isPinned = true;
 let ws = null;
@@ -632,22 +716,22 @@ const alertList     = document.getElementById('alertList');
 const marketStatus  = document.getElementById('marketStatus');
 const refreshStatus = document.getElementById('refreshStatus');
 const refreshDot    = document.getElementById('refreshDot');
-const refreshBtn    = document.getElementById('refreshBtn');
 const settingsBtn   = document.getElementById('settingsBtn');
 const settingsPanel = document.getElementById('settingsPanel');
 const schemeBar     = document.getElementById('schemeBar');
 const pinBtn        = document.getElementById('pinBtn');
 const minimizeBtn   = document.getElementById('minimizeBtn');
+const configBtn     = document.getElementById('configBtn');
+const configModal   = document.getElementById('configModal');
 const closeBtn      = document.getElementById('closeBtn');
 const opacitySlider = document.getElementById('opacitySlider');
-const modeKline      = document.getElementById('modeKline');
-const modeSentiment  = document.getElementById('modeSentiment');
 const modeStock      = document.getElementById('modeStock');
 const sentimentPanel = document.getElementById('sentimentPanel');
 const hotPanel       = document.getElementById('hotPanel');
 const srcTdx         = document.getElementById('srcTdx');
 const srcEastmoney   = document.getElementById('srcEastmoney');
 const srcKaipanla    = document.getElementById('srcKaipanla');
+const srcAshare      = document.getElementById('srcAshare');
 
 function updateSourceDots(sources) {
   if (!sources) return;
@@ -660,6 +744,7 @@ function updateSourceDots(sources) {
   if ('tdx' in sources) setDot(srcTdx, sources.tdx);
   if ('eastmoney' in sources) setDot(srcEastmoney, sources.eastmoney);
   if ('kaipanla' in sources) setDot(srcKaipanla, sources.kaipanla);
+  if ('ashare' in sources) setDot(srcAshare, sources.ashare);
 }
 
 /* ── 工具函数 ── */
@@ -675,6 +760,55 @@ function saveSchemes() {
     ws.send(JSON.stringify({ action: 'update_schemes', schemes }));
   }
 }
+
+/* ── 项目配置函数 ── */
+function saveAppConfig() {
+  localStorage.setItem('stock-radar-config', JSON.stringify(appConfig));
+}
+function syncConfigToBackend() {
+  if (ws && ws.readyState === WebSocket.OPEN)
+    ws.send(JSON.stringify({ action: 'update_config', config: appConfig }));
+}
+function openConfigModal() {
+  const isKpl = appConfig.sectorSource === 'kaipanla';
+  document.getElementById('cfgUserId').value = (appConfig.kaipanlaUserId === '0') ? '' : appConfig.kaipanlaUserId;
+  document.getElementById('cfgToken').value  = (appConfig.kaipanlaToken  === '0') ? '' : appConfig.kaipanlaToken;
+  document.getElementById('cfgSrcKpl').classList.toggle('active', isKpl);
+  document.getElementById('cfgSrcEm').classList.toggle('active', !isKpl);
+  document.getElementById('kaipanlaInputs').classList.toggle('disabled', !isKpl);
+  document.getElementById('cfgAshareEnabled').checked = appConfig.ashareEnabled !== false;
+  configModal.classList.add('active');
+}
+configBtn?.addEventListener('click', e => { e.stopPropagation(); openConfigModal(); });
+document.addEventListener('click', e => {
+  if (configModal && configModal.classList.contains('active') && !configModal.contains(e.target) && e.target !== configBtn)
+    configModal.classList.remove('active');
+});
+document.getElementById('cfgSrcKpl')?.addEventListener('click', () => {
+  document.getElementById('cfgSrcKpl').classList.add('active');
+  document.getElementById('cfgSrcEm').classList.remove('active');
+  document.getElementById('kaipanlaInputs').classList.remove('disabled');
+});
+document.getElementById('cfgSrcEm')?.addEventListener('click', () => {
+  document.getElementById('cfgSrcEm').classList.add('active');
+  document.getElementById('cfgSrcKpl').classList.remove('active');
+  document.getElementById('kaipanlaInputs').classList.add('disabled');
+});
+document.getElementById('configSaveBtn')?.addEventListener('click', () => {
+  const isKpl = document.getElementById('cfgSrcKpl').classList.contains('active');
+  appConfig = {
+    sectorSource:   isKpl ? 'kaipanla' : 'eastmoney',
+    kaipanlaUserId: document.getElementById('cfgUserId').value.trim() || '0',
+    kaipanlaToken:  document.getElementById('cfgToken').value.trim()  || '0',
+    ashareEnabled:  document.getElementById('cfgAshareEnabled').checked,
+    ashareAsPrimary: false,
+  };
+  saveAppConfig();
+  syncConfigToBackend();
+  configModal.classList.remove('active');
+  if (ws && ws.readyState === WebSocket.OPEN)
+    ws.send(JSON.stringify({ action: 'get_sentiment' }));
+});
 
 /* ── 迷你图 ── */
 function drawAllMiniCharts() {
@@ -724,61 +858,25 @@ settingsBtn?.addEventListener('click', () => {
   settingsPanel.classList.toggle('active', settingsOpen);
   if (settingsOpen) renderSettings();
 });
-let sentimentOpen = false;
 let sentimentData = null;
 
-modeKline?.addEventListener('click', () => {
-  chartMode = 'kline';
-  modeKline.classList.add('active');
-  modeSentiment.classList.remove('active');
-  sentimentOpen = false;
-  sentimentPanel.classList.remove('active');
-  alertList.style.display = '';
-  hotPanel.style.display = '';
-  schemeBar.style.display = '';   // ← 恢复方案标签栏
-  drawAllMiniCharts();
-});
-modeSentiment?.addEventListener('click', () => {
-  sentimentOpen = !sentimentOpen;
-  modeSentiment.classList.toggle('active', sentimentOpen);
-  modeKline.classList.toggle('active', !sentimentOpen);
-  sentimentPanel.classList.toggle('active', sentimentOpen);
-  document.getElementById('klineViewer').style.display = sentimentOpen ? 'none' : '';
-  // 情绪面板打开时隐藏方案栏/列表；关闭时恢复
-  alertList.style.display = sentimentOpen ? 'none' : '';
-  hotPanel.style.display  = sentimentOpen ? 'none' : '';
-  schemeBar.style.display = sentimentOpen ? 'none' : '';
-  // 情绪面板不禁用盘中/复盘按钮（允许随时切换）
-  if (sentimentOpen) {
-    // 每次打开都重新拉取最新数据（不使用缓存）
-    renderSentimentPanel();
-    sentimentData = null;
-    fetchSentimentData();
-  }
-});
-refreshBtn?.addEventListener('click', () => {
-  // 旋转动画
-  refreshBtn.style.transition = 'transform 0.6s ease';
-  refreshBtn.style.transform = 'rotate(360deg)';
-  setTimeout(() => { refreshBtn.style.transition = ''; refreshBtn.style.transform = ''; }, 650);
-
-  if (sentimentOpen) {
-    // 情绪面板：重新拉取情绪数据
-    renderSentimentPanel();
-    fetchSentimentData();
-    return;
-  }
-
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ action: 'update_schemes', schemes }));
-    setTimeout(() => {
-      ws.send(JSON.stringify({ action: 'refresh' }));
-    }, 200);
-  } else {
-    // WS 未连接：尝试重连
-    connectWS();
-  }
-});
+function bindSentimentRefreshBtn() {
+  const btn = document.getElementById('sentimentRefreshBtn');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    btn.style.transition = 'transform 0.6s ease';
+    btn.style.transform = 'rotate(360deg)';
+    setTimeout(() => { btn.style.transition = ''; btn.style.transform = ''; }, 650);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ action: 'update_schemes', schemes }));
+      ws.send(JSON.stringify({ action: 'get_sentiment' }));
+      setTimeout(() => { ws.send(JSON.stringify({ action: 'refresh' })); }, 200);
+    } else {
+      connectWS();
+    }
+  });
+}
+bindSentimentRefreshBtn();
 pinBtn?.addEventListener('click', () => { isPinned=!isPinned; pinBtn.classList.toggle('pinned',isPinned); window.radarAPI?.togglePin?.(); });
 pinBtn?.classList.add('pinned');
 minimizeBtn?.addEventListener('click', () => window.radarAPI?.minimize?.());
@@ -1080,6 +1178,7 @@ function connectWS() {
   ws.onopen = () => {
     wsConnected=true; refreshStatus.textContent='已连接'; refreshDot.style.background='#22c55e';
     ws.send(JSON.stringify({ action: 'update_schemes', schemes }));
+    ws.send(JSON.stringify({ action: 'update_config', config: appConfig }));
     // 自动请求情绪数据
     ws.send(JSON.stringify({ action: 'get_sentiment' }));
     // 显示加载中提示，等 init/screen_results 消息回来再渲染列表
@@ -1316,6 +1415,10 @@ function renderSettings() {
         html += `<div class="condition-row" style="padding-left:20px;"><button class="ac-add-btn" data-scheme="${s.id}" data-key="amountCompare" style="background:none;border:1px dashed var(--border);color:var(--accent);cursor:pointer;font-size:11px;padding:2px 10px;border-radius:4px;">＋ 增加条件</button></div>`;
         html += `<div`; // dummy open tag to match the closing </div> below
       }
+      // Ashare 降级提示：成交额类条件在 Ashare 模式下无数据
+      if (['amountHigh','amountLow','amountMultiple','amountCompare'].includes(def.key) && appConfig.ashareEnabled !== false) {
+        html += `<div style="font-size:9px;color:#f59e0b;margin:1px 0 0 20px;">⚠ Ashare 备用源无成交额数据，此条件在 Ashare 模式下不会触发</div>`;
+      }
       html += `</div>`;
     }
     html += `</div>`;
@@ -1390,19 +1493,23 @@ function renderRightSentiment(data) {
   }
 
   el.innerHTML = `
+    <div style="display:flex;justify-content:flex-end;padding:2px 0 4px;">
+      <button class="header-btn" id="sentimentRefreshBtn" title="刷新情绪数据" style="width:22px;height:22px;font-size:11px;">↻</button>
+    </div>
     <div class="sent-section">
       <div class="sent-section-title">📈 沪深指数</div>
-      ${idxHtml || '<div style="color:var(--muted);font-size:10px;">暂无数据</div>'}
+      ${idxHtml || '<div style="color:var(--muted);font-size:10px;">获取失败（TDX 未连接且东财 fallback 异常）</div>'}
     </div>
-    ${breadthHtml ? `<div class="sent-section">
+    <div class="sent-section">
       <div class="sent-section-title">🌡️ 市场宽度</div>
-      ${breadthHtml}
-    </div>` : ''}
-    ${sectorHtml ? `<div class="sent-section">
+      ${breadthHtml || '<div style="color:var(--muted);font-size:10px;">获取失败（东财接口异常）</div>'}
+    </div>
+    <div class="sent-section">
       <div class="sent-section-title">🔥 题材涨停排名</div>
-      ${sectorHtml}
-    </div>` : ''}
+      ${sectorHtml || '<div style="color:var(--muted);font-size:10px;">暂无数据（非交易时段或数据源未配置）</div>'}
+    </div>
   `;
+  bindSentimentRefreshBtn();
 }
 
 /* 渲染骨架（加载中状态） - 旧情绪面板 */
@@ -1447,7 +1554,6 @@ function fetchSentimentData() {
 
 /* 后端返回情绪数据后渲染 */
 function renderSentimentFromData(data) {
-  if (!sentimentOpen) return;
   if (data.error) {
     console.error('[情绪] 后端错误:', data.error);
     return;
