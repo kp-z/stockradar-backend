@@ -868,6 +868,10 @@ def gen_sentiment_data():
         'history': [],
         'sh_klines': sh_klines,
         'sources': sources,
+        'updated_at': datetime.now().strftime('%H:%M:%S'),
+        'index_source': 'TDX' if sources.get('tdx') else '东方财富',
+        'breadth_source': '东方财富',
+        'sector_source': '开盘啦' if sector_source != 'eastmoney' else '东方财富',
     }
 
 def get_market_state():

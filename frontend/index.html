@@ -1437,6 +1437,13 @@ function renderRightSentiment(data) {
   const el = document.getElementById('rightSentiment');
   if (!el || !data) return;
 
+  const updatedAt = data.updated_at || '';
+  const indexSrc = data.index_source || '';
+  const breadthSrc = data.breadth_source || '';
+  const sectorSrc = data.sector_source || '';
+  const srcTag = (src, time) =>
+    `<span style="font-size:9px;color:var(--muted);font-weight:400;margin-left:auto;">${esc(src)}${time ? ' · ' + time : ''}</span>`;
+
   // 指数
   const indices = data.indices || [];
   let idxHtml = '';
@@ -1497,15 +1504,15 @@ function renderRightSentiment(data) {
       <button class="header-btn" id="sentimentRefreshBtn" title="刷新情绪数据" style="width:22px;height:22px;font-size:11px;">↻</button>
     </div>
     <div class="sent-section">
-      <div class="sent-section-title">📈 沪深指数</div>
+      <div class="sent-section-title" style="display:flex;align-items:center;">📈 沪深指数${srcTag(indexSrc, updatedAt)}</div>
       ${idxHtml || '<div style="color:var(--muted);font-size:10px;">获取失败（TDX 未连接且东财 fallback 异常）</div>'}
     </div>
     <div class="sent-section">
-      <div class="sent-section-title">🌡️ 市场宽度</div>
+      <div class="sent-section-title" style="display:flex;align-items:center;">🌡️ 市场宽度${srcTag(breadthSrc, updatedAt)}</div>
       ${breadthHtml || '<div style="color:var(--muted);font-size:10px;">获取失败（东财接口异常）</div>'}
     </div>
     <div class="sent-section">
-      <div class="sent-section-title">🔥 题材涨停排名</div>
+      <div class="sent-section-title" style="display:flex;align-items:center;">🔥 题材涨停排名${srcTag(sectorSrc, updatedAt)}</div>
       ${sectorHtml || '<div style="color:var(--muted);font-size:10px;">暂无数据（非交易时段或数据源未配置）</div>'}
     </div>
   `;
