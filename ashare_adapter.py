@@ -6,7 +6,10 @@ import sys
 import os
 
 # 从项目 lib/ 目录导入 Ashare
-_base_dir = os.path.dirname(os.path.abspath(__file__))
+if getattr(sys, 'frozen', False):
+    _base_dir = sys._MEIPASS
+else:
+    _base_dir = os.path.dirname(os.path.abspath(__file__))
 _lib_dir = os.path.join(_base_dir, 'lib')
 if os.path.isdir(_lib_dir) and _lib_dir not in sys.path:
     sys.path.insert(0, _lib_dir)

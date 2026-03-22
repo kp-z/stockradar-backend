@@ -11,6 +11,7 @@ a = Analysis(
         ('frontend', 'frontend'),
         ('klines_data.json', '.'),
         ('assets/tray_icon.png', 'assets'),
+        ('lib', 'lib'),
     ],
     hiddenimports=[
         'server',
