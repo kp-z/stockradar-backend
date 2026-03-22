@@ -11,16 +11,201 @@ import websockets
 from websockets.asyncio.server import Request, Response
 from websockets.datastructures import Headers
 import os
+import sys
+import shutil
 import traceback
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
+import sqlite3
+import hashlib
+import secrets
+
+# ── Supabase 云同步（可选） ──
+try:
+    from supabase_sync import (
+        init_supabase, is_available, set_sync_enabled,
+        cloud_register, cloud_login, cloud_create_session,
+        cloud_save_watchlist, cloud_get_watchlist,
+        cloud_save_schemes, cloud_get_schemes,
+        enqueue_sync, drain_sync_queue, merge_watchlists,
+    )
+    SUPABASE_LOADED = True
+except ImportError:
+    SUPABASE_LOADED = False
+
+
+def _get_resource_dir():
+    """PyInstaller 打包后的只读资源目录，开发时为项目根目录"""
+    if getattr(sys, 'frozen', False):
+        return sys._MEIPASS
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def _get_data_dir():
+    """可读写的数据目录，打包后放 ~/Library/Application Support/StockRadar/"""
+    if getattr(sys, 'frozen', False):
+        data_dir = os.path.expanduser('~/Library/Application Support/StockRadar')
+        os.makedirs(data_dir, exist_ok=True)
+        return data_dir
+    return os.path.dirname(os.path.abspath(__file__))
+
+# ── SQLite 用户数据库 ──
+DB_FILE = os.path.join(_get_data_dir(), 'stockradar.db')
+
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            salt TEXT NOT NULL,
+            is_admin INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now')),
+            last_login TEXT
+        );
+        CREATE TABLE IF NOT EXISTS sessions (
+            token TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            created_at TEXT DEFAULT (datetime('now')),
+            expires_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS user_watchlists (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            stock_code TEXT NOT NULL,
+            added_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(user_id, stock_code)
+        );
+        CREATE TABLE IF NOT EXISTS user_schemes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            schemes_json TEXT NOT NULL,
+            updated_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(user_id)
+        );
+    ''')
+    # ── 云同步迁移 ──
+    try:
+        conn.execute("ALTER TABLE users ADD COLUMN cloud_user_id TEXT")
+    except sqlite3.OperationalError:
+        pass  # 列已存在
+    conn.execute('''CREATE TABLE IF NOT EXISTS sync_queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        action TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        created_at TEXT DEFAULT (datetime('now')),
+        retry_count INTEGER DEFAULT 0
+    )''')
+    cur = conn.execute("SELECT COUNT(*) FROM users WHERE is_admin=1")
+    if cur.fetchone()[0] == 0:
+        salt = secrets.token_hex(16)
+        pw_hash = hashlib.sha256(('admin' + salt).encode()).hexdigest()
+        conn.execute("INSERT INTO users (username, password_hash, salt, is_admin) VALUES (?, ?, ?, 1)",
+                     ('admin', pw_hash, salt))
+        print("[DB] 创建默认管理员 admin/admin")
+    conn.commit()
+    conn.close()
+
+def _hash_password(password, salt):
+    return hashlib.sha256((password + salt).encode()).hexdigest()
+
+def create_user(username, password):
+    conn = sqlite3.connect(DB_FILE)
+    try:
+        salt = secrets.token_hex(16)
+        pw_hash = _hash_password(password, salt)
+        conn.execute("INSERT INTO users (username, password_hash, salt) VALUES (?, ?, ?)", (username, pw_hash, salt))
+        conn.commit()
+        return True, None
+    except sqlite3.IntegrityError:
+        return False, '用户名已存在'
+    finally:
+        conn.close()
+
+def verify_user(username, password):
+    conn = sqlite3.connect(DB_FILE)
+    row = conn.execute("SELECT id, password_hash, salt, is_admin, cloud_user_id FROM users WHERE username=?", (username,)).fetchone()
+    conn.close()
+    if not row:
+        return None
+    uid, pw_hash, salt, is_admin, cloud_uid = row
+    if _hash_password(password, salt) == pw_hash:
+        return {'id': uid, 'username': username, 'is_admin': bool(is_admin), 'cloud_user_id': cloud_uid}
+    return None
+
+def create_session(user_id):
+    token = secrets.token_urlsafe(32)
+    expires = (datetime.now() + timedelta(days=7)).isoformat()
+    conn = sqlite3.connect(DB_FILE)
+    conn.execute("INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)", (token, user_id, expires))
+    conn.execute("UPDATE users SET last_login=datetime('now') WHERE id=?", (user_id,))
+    conn.commit()
+    conn.close()
+    return token
+
+def get_user_by_token(token):
+    conn = sqlite3.connect(DB_FILE)
+    row = conn.execute("""
+        SELECT u.id, u.username, u.is_admin, u.cloud_user_id FROM sessions s
+        JOIN users u ON s.user_id = u.id
+        WHERE s.token = ? AND s.expires_at > datetime('now')
+    """, (token,)).fetchone()
+    conn.close()
+    if row:
+        return {'id': row[0], 'username': row[1], 'is_admin': bool(row[2]), 'cloud_user_id': row[3]}
+    return None
+
+def save_user_watchlist(user_id, codes):
+    conn = sqlite3.connect(DB_FILE)
+    conn.execute("DELETE FROM user_watchlists WHERE user_id=?", (user_id,))
+    for code in codes:
+        conn.execute("INSERT OR IGNORE INTO user_watchlists (user_id, stock_code) VALUES (?, ?)", (user_id, code))
+    conn.commit()
+    conn.close()
+
+def get_user_watchlist(user_id):
+    conn = sqlite3.connect(DB_FILE)
+    rows = conn.execute("SELECT stock_code FROM user_watchlists WHERE user_id=? ORDER BY added_at", (user_id,)).fetchall()
+    conn.close()
+    return [r[0] for r in rows]
+
+def save_user_schemes(user_id, schemes_json):
+    conn = sqlite3.connect(DB_FILE)
+    conn.execute("""INSERT INTO user_schemes (user_id, schemes_json, updated_at) VALUES (?, ?, datetime('now'))
+                    ON CONFLICT(user_id) DO UPDATE SET schemes_json=excluded.schemes_json, updated_at=datetime('now')""",
+                 (user_id, schemes_json))
+    conn.commit()
+    conn.close()
+
+def get_user_schemes(user_id):
+    conn = sqlite3.connect(DB_FILE)
+    row = conn.execute("SELECT schemes_json FROM user_schemes WHERE user_id=?", (user_id,)).fetchone()
+    conn.close()
+    return json.loads(row[0]) if row else None
+
+def get_all_users_admin():
+    conn = sqlite3.connect(DB_FILE)
+    users = conn.execute("SELECT id, username, is_admin, created_at, last_login FROM users ORDER BY id").fetchall()
+    result = []
+    for u in users:
+        wl = get_user_watchlist(u[0])
+        sc = get_user_schemes(u[0])
+        result.append({
+            'id': u[0], 'username': u[1], 'is_admin': bool(u[2]),
+            'created_at': u[3], 'last_login': u[4],
+            'watchlist': wl, 'schemes': sc
+        })
+    conn.close()
+    return result
 
 # mootdx 通达信数据接口
 from mootdx.quotes import Quotes
 
 # 可选：Ashare 备用数据源（新浪/腾讯双核心）
 try:
-    from ashare_adapter import fetch_klines_ashare, preload_all_klines_ashare
+    from ashare_adapter import fetch_klines_ashare, preload_all_klines_ashare, fetch_index_klines_ashare
     from ashare_adapter import is_available as ashare_available
     print(f"[Ashare] 适配层已加载, 可用={ashare_available()}")
 except ImportError:
@@ -39,6 +224,26 @@ APP_CONFIG = {
     'ashare_as_primary': False,    # True = Ashare 作为K线主力（替换TDX）
 }
 
+# ── 管理员自定义板块涨幅数据（非空时优先于 API） ──
+ADMIN_CUSTOM_SECTORS = []
+
+# ── 情绪数据缓存 ──
+_sentiment_cache = {'data': None, 'ts': 0}
+_SENTIMENT_TTL_OPEN = 60     # 开盘时60秒TTL
+_SENTIMENT_TTL_CLOSED = 300  # 闭盘时300秒TTL
+
+def get_sentiment_cached():
+    """带缓存的情绪数据获取"""
+    now = time.time()
+    state = get_market_state()
+    ttl = _SENTIMENT_TTL_OPEN if state in ('open', 'call') else _SENTIMENT_TTL_CLOSED
+    if _sentiment_cache['data'] and (now - _sentiment_cache['ts']) < ttl:
+        return _sentiment_cache['data']
+    data = gen_sentiment_data()
+    _sentiment_cache['data'] = data
+    _sentiment_cache['ts'] = now
+    return data
+
 # ── 通达信连接 ──
 tdx_client = None
 
@@ -46,7 +251,7 @@ def get_tdx():
     global tdx_client
     try:
         if tdx_client is None:
-            tdx_client = Quotes.factory(market='std', bestip=True, timeout=10)
+            tdx_client = Quotes.factory(market='std', bestip=False, timeout=5)
             print("[TDX] 通达信连接成功")
         return tdx_client
     except Exception as e:
@@ -106,7 +311,13 @@ def code_to_market(code):
 
 # ── K线缓存 {code: [kline_list]} ──
 klines_cache = {}
-KLINES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'klines_data.json')
+KLINES_FILE = os.path.join(_get_data_dir(), 'klines_data.json')
+
+# 打包环境首次启动时，从 bundle 资源复制初始缓存
+if getattr(sys, 'frozen', False) and not os.path.exists(KLINES_FILE):
+    _bundled = os.path.join(_get_resource_dir(), 'klines_data.json')
+    if os.path.exists(_bundled):
+        shutil.copy2(_bundled, KLINES_FILE)
 _last_save_date = ''  # 上次收盘保存的日期 YYYY-MM-DD
 _today_updated = False  # 今天是否已用实时行情更新过当天K线
 
@@ -312,11 +523,13 @@ def check_condition(key, cond, code, klines, q):
         price = q['price'] if q and q.get('price', 0) > 0 else last_k['close']
 
         if key == 'marketCap':
-            # 流通市值范围（用价格*成交量估算，简化处理）
             cap_min = float(cond.get('min', 0))
             cap_max = float(cond.get('max', 9999))
-            # 简化：用最近成交额/换手率估算，这里暂时跳过精确计算
-            return True  # 暂时通过
+            float_shares = _float_shares_cache.get(code, 0)
+            if float_shares <= 0:
+                return True  # 无流通股本数据时跳过此条件
+            cap = price * float_shares / 1e8  # 流通市值（亿元）
+            return cap_min <= cap <= cap_max
 
         elif key == 'limitUp':
             change = q['change'] if q else 0
@@ -377,36 +590,52 @@ def check_condition(key, cond, code, klines, q):
             return price >= golden_level and closes[-2] < golden_level if len(closes) >= 2 else False
 
         elif key == 'bollingerUp':
-            band = cond.get('band', 'upper')
-            period_str = cond.get('period', '20d')
-            period = int(period_str.replace('d', '').replace('m', '')) if isinstance(period_str, str) else 20
-            if len(closes) < period:
+            rules = cond.get('rules', [])
+            if not rules and 'band' in cond:
+                rules = [{'band': cond.get('band', 'upper'), 'period': cond.get('period', '20d')}]
+            if not rules:
                 return False
-            sma = sum(closes[-period:]) / period
-            std = (sum((c - sma)**2 for c in closes[-period:]) / period) ** 0.5
-            if band == 'upper':
-                level = sma + 2 * std
-            elif band == 'middle':
-                level = sma
-            else:
-                level = sma - 2 * std
-            return price >= level and closes[-2] < level if len(closes) >= 2 else False
+            for rule in rules:
+                band = rule.get('band', 'upper')
+                period_str = rule.get('period', '20d')
+                period = int(period_str.replace('d', '').replace('m', '')) if isinstance(period_str, str) else 20
+                if len(closes) < period:
+                    return False
+                sma = sum(closes[-period:]) / period
+                std = (sum((c - sma)**2 for c in closes[-period:]) / period) ** 0.5
+                if band == 'upper':
+                    level = sma + 2 * std
+                elif band == 'middle':
+                    level = sma
+                else:
+                    level = sma - 2 * std
+                if not (len(closes) >= 2 and price >= level and closes[-2] < level):
+                    return False
+            return True
 
         elif key == 'bollingerDown':
-            band = cond.get('band', 'lower')
-            period_str = cond.get('period', '20d')
-            period = int(period_str.replace('d', '').replace('m', '')) if isinstance(period_str, str) else 20
-            if len(closes) < period:
+            rules = cond.get('rules', [])
+            if not rules and 'band' in cond:
+                rules = [{'band': cond.get('band', 'lower'), 'period': cond.get('period', '20d')}]
+            if not rules:
                 return False
-            sma = sum(closes[-period:]) / period
-            std = (sum((c - sma)**2 for c in closes[-period:]) / period) ** 0.5
-            if band == 'lower':
-                level = sma - 2 * std
-            elif band == 'middle':
-                level = sma
-            else:
-                level = sma + 2 * std
-            return price <= level and closes[-2] > level if len(closes) >= 2 else False
+            for rule in rules:
+                band = rule.get('band', 'lower')
+                period_str = rule.get('period', '20d')
+                period = int(period_str.replace('d', '').replace('m', '')) if isinstance(period_str, str) else 20
+                if len(closes) < period:
+                    return False
+                sma = sum(closes[-period:]) / period
+                std = (sum((c - sma)**2 for c in closes[-period:]) / period) ** 0.5
+                if band == 'lower':
+                    level = sma - 2 * std
+                elif band == 'middle':
+                    level = sma
+                else:
+                    level = sma + 2 * std
+                if not (len(closes) >= 2 and price <= level and closes[-2] > level):
+                    return False
+            return True
 
         elif key == 'cupHandle':
             days = int(cond.get('days', 20))
@@ -464,11 +693,91 @@ def check_condition(key, cond, code, klines, q):
                     return False
             return True
 
+        elif key == 'bigOrder':
+            # 需要逐笔成交数据判断大单，当前数据源不支持
+            return False
+
+        elif key == 'shortRise':
+            seconds = int(cond.get('seconds', 60))
+            percent = float(cond.get('percent', 3))
+            history = price_history.get(code, [])
+            if not history:
+                return False
+            now = time.time()
+            cutoff = now - seconds
+            # 找到 N 秒前的价格（最接近 cutoff 的记录）
+            old_prices = [p for t, p in history if t <= cutoff]
+            if not old_prices:
+                return False
+            old_price = old_prices[-1]  # cutoff 之前最近的价格
+            if old_price <= 0:
+                return False
+            rise = (price - old_price) / old_price * 100
+            return rise >= percent
+
+        elif key == 'breakMinMA':
+            minutes = int(cond.get('minutes', 5))
+            history = price_history.get(code, [])
+            if not history:
+                return False
+            now = time.time()
+            cutoff = now - minutes * 60
+            # 收集 N 分钟内的价格计算均价
+            recent_prices = [p for t, p in history if t >= cutoff]
+            if len(recent_prices) < 3:
+                return False  # 数据不足
+            ma = sum(recent_prices) / len(recent_prices)
+            # 突破判断：之前在均线下方，现在突破
+            prev_prices = recent_prices[:-1]
+            prev_avg = sum(prev_prices) / len(prev_prices)
+            return prev_avg < ma and price >= ma
+
     except Exception as e:
         print(f"[选股] 条件 {key} 检查失败: {e}")
         return False
 
     return True
+
+# ── 价格历史滑动窗口（用于 shortRise / breakMinMA 条件）──
+price_history = {}  # {code: [(timestamp, price), ...]}
+_PRICE_HISTORY_MAX_AGE = 600  # 保留最近600秒
+
+def record_price_history(quotes):
+    """记录实时价格到滑动窗口"""
+    now = time.time()
+    cutoff = now - _PRICE_HISTORY_MAX_AGE
+    for code, q in quotes.items():
+        if q.get('price', 0) <= 0:
+            continue
+        if code not in price_history:
+            price_history[code] = []
+        price_history[code].append((now, q['price']))
+        # 清理过期数据
+        price_history[code] = [(t, p) for t, p in price_history[code] if t > cutoff]
+
+# ── 流通市值缓存（通过 finance 接口获取流通股本）──
+_float_shares_cache = {}  # {code: 流通股本(股)}
+_float_shares_loaded = False
+
+def load_float_shares():
+    """从通达信 finance 接口加载流通股本数据"""
+    global _float_shares_loaded
+    client = get_tdx()
+    if not client:
+        return
+    for code, name in STOCKS:
+        try:
+            df = client.finance(symbol=code)
+            if df is not None and not df.empty:
+                # finance 返回的字段中 liutongguben 为流通股本（股）
+                row = df.iloc[-1] if len(df) > 1 else df.iloc[0]
+                float_shares = float(row.get('liutongguben', 0))
+                if float_shares > 0:
+                    _float_shares_cache[code] = float_shares
+        except Exception as e:
+            pass
+    _float_shares_loaded = True
+    print(f"[财务] 加载流通股本: {len(_float_shares_cache)}/{len(STOCKS)} 只")
 
 # ── 上一次快照 ──
 last_snapshot = {}
@@ -658,90 +967,100 @@ def fetch_index_quotes():
         return []
 
 def fetch_sh_klines(days=20):
-    """获取上证指数日K线"""
+    """获取上证指数日K线，优先通达信，回退 Ashare"""
+    # 尝试通达信
     client = get_tdx()
-    if not client:
-        return []
-    try:
-        df = client.bars(symbol='999999', frequency=9, offset=days)
-        if df is None or df.empty:
-            return []
-        result = []
-        for _, row in df.iterrows():
-            result.append({
-                'open': round(float(row.get('open', 0)), 2),
-                'close': round(float(row.get('close', 0)), 2),
-                'high': round(float(row.get('high', 0)), 2),
-                'low': round(float(row.get('low', 0)), 2),
-            })
-        return result
-    except Exception as e:
-        print(f"[TDX] 获取上证K线失败: {e}")
-        return []
+    if client:
+        try:
+            df = client.bars(symbol='999999', frequency=9, offset=days)
+            if df is not None and not df.empty:
+                result = []
+                for _, row in df.iterrows():
+                    result.append({
+                        'open': round(float(row.get('open', 0)), 2),
+                        'close': round(float(row.get('close', 0)), 2),
+                        'high': round(float(row.get('high', 0)), 2),
+                        'low': round(float(row.get('low', 0)), 2),
+                    })
+                return result
+        except Exception as e:
+            print(f"[TDX] 获取上证K线失败: {e}")
+    # 回退 Ashare（上证指数 = sh000001）
+    if ashare_available():
+        try:
+            klines = fetch_index_klines_ashare('sh000001', days)
+            if klines:
+                print(f"[Ashare] 上证指数K线获取成功: {len(klines)} 条")
+                return klines
+        except Exception as e:
+            print(f"[Ashare] 获取上证K线失败: {e}")
+    return []
 
 def fetch_market_breadth():
     """从东方财富获取全市场涨跌统计（真实数据）"""
     try:
-        # 东方财富全市场涨跌统计API
-        url = 'https://push2.eastmoney.com/api/qt/clist/get'
         headers = {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://quote.eastmoney.com/'}
-        # 获取全部A股（沪深）
-        params = {
-            'pn': 1, 'pz': 1, 'po': 1, 'np': 1, 'fltt': 2, 'invt': 2,
-            'fid': 'f3', 'fs': 'm:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23',
-            'fields': 'f2,f3,f4,f12,f14,f104,f105,f106',
-            '_': int(time.time() * 1000)
-        }
-        resp = requests.get(url, params=params, headers=headers, timeout=8)
-        data = resp.json()
-        total = data.get('data', {}).get('total', 0)
 
-        # f104=上涨家数, f105=下跌家数, f106=平盘家数 在汇总数据中
-        # 但这个接口不直接给汇总，我们用另一个接口
+        # 查询沪深两市涨跌家数（上证+深证求和 = 全A股）
         url2 = 'https://push2.eastmoney.com/api/qt/ulist.np/get'
         params2 = {
             'fltt': 2, 'invt': 2,
             'fields': 'f1,f2,f3,f4,f6,f12,f14,f104,f105,f106',
-            'secids': '1.000001',  # 上证指数包含涨跌家数
+            'secids': '1.000001,0.399001',  # 上证 + 深证
             '_': int(time.time() * 1000)
         }
         resp2 = requests.get(url2, params=params2, headers=headers, timeout=8)
         data2 = resp2.json()
         diff = data2.get('data', {}).get('diff', [])
-        if diff:
-            item = diff[0]
-            up = int(item.get('f104', 0))
-            down = int(item.get('f105', 0))
-            flat = int(item.get('f106', 0))
-        else:
-            up, down, flat = 0, 0, 0
+        up, down, flat = 0, 0, 0
+        for item in diff:
+            up += int(item.get('f104', 0))
+            down += int(item.get('f105', 0))
+            flat += int(item.get('f106', 0))
 
-        # 涨停跌停数量：用东方财富涨停板接口
+        # 涨停跌停数量：东方财富涨停池API（主源），10jqka（备源）
         limit_up = 0
         limit_down = 0
         try:
-            # 涨停
-            url_lu = 'https://push2.eastmoney.com/api/qt/clist/get'
-            params_lu = {
-                'pn': 1, 'pz': 1, 'po': 1, 'np': 1, 'fltt': 2, 'invt': 2,
-                'fid': 'f3', 'fs': 'm:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23',
-                'fields': 'f2,f3,f12',
-                'fid': 'f3', 'po': 0,
-                'f3': '>=9.8',
-                '_': int(time.time() * 1000)
+            today = datetime.now().strftime('%Y%m%d')
+            # 东方财富涨停池
+            url_zt = 'https://push2ex.eastmoney.com/getTopicZTPool'
+            params_zt = {
+                'ut': '7eea3edcaed734bea9cbfc24409ed989',
+                'dpt': 'wz.ztzt', 'Ession': 'CURRENT',
+                'date': today, '_': int(time.time() * 1000)
             }
-            # 更简单的方式：直接从同花顺获取涨停数
-            url_zt = 'https://data.10jqka.com.cn/datacentre/limit_up/limiter_count.html'
-            resp_zt = requests.get(url_zt, headers={
-                'User-Agent': 'Mozilla/5.0',
-                'Referer': 'https://data.10jqka.com.cn/'
-            }, timeout=5)
-            if resp_zt.status_code == 200:
-                zt_data = resp_zt.json()
-                limit_up = zt_data.get('data', {}).get('limit_up_count', 0)
-                limit_down = zt_data.get('data', {}).get('limit_down_count', 0)
+            resp_zt = requests.get(url_zt, headers=headers, timeout=5)
+            zt_data = resp_zt.json()
+            pool = (zt_data.get('data') or {}).get('pool', [])
+            if pool:
+                limit_up = len(pool)
+            # 东方财富跌停池
+            url_dt = 'https://push2ex.eastmoney.com/getTopicDTPool'
+            params_dt = {
+                'ut': '7eea3edcaed734bea9cbfc24409ed989',
+                'dpt': 'wz.ztzt', 'Ession': 'CURRENT',
+                'date': today, '_': int(time.time() * 1000)
+            }
+            resp_dt = requests.get(url_dt, headers=headers, timeout=5)
+            dt_data = resp_dt.json()
+            dt_pool = (dt_data.get('data') or {}).get('pool', [])
+            if dt_pool:
+                limit_down = len(dt_pool)
         except Exception as e:
-            print(f"[情绪] 获取涨停数失败: {e}")
+            print(f"[情绪] 东财涨停池失败，尝试10jqka: {e}")
+            try:
+                url_ths = 'https://data.10jqka.com.cn/datacentre/limit_up/limiter_count.html'
+                resp_ths = requests.get(url_ths, headers={
+                    'User-Agent': 'Mozilla/5.0',
+                    'Referer': 'https://data.10jqka.com.cn/'
+                }, timeout=5)
+                if resp_ths.status_code == 200:
+                    ths_data = resp_ths.json()
+                    limit_up = ths_data.get('data', {}).get('limit_up_count', 0)
+                    limit_down = ths_data.get('data', {}).get('limit_down_count', 0)
+            except Exception as e2:
+                print(f"[情绪] 10jqka也失败: {e2}")
 
         total_count = up + down + flat or 1
         return {
@@ -850,16 +1169,22 @@ def gen_sentiment_data():
     if breadth.get('up', 0) > 0 or breadth.get('down', 0) > 0:
         sources['eastmoney'] = True
 
-    # 题材涨停排名：按配置选数据源
-    sector_source = APP_CONFIG.get('sector_source', 'kaipanla')
-    if sector_source == 'eastmoney':
-        sectors = fetch_eastmoney_sectors()
-        if sectors:
-            sources['eastmoney'] = True
+    # 题材涨停排名：管理员自定义数据优先，否则按配置选数据源
+    sector_source_label = '管理员配置'
+    if ADMIN_CUSTOM_SECTORS:
+        sectors = ADMIN_CUSTOM_SECTORS
     else:
-        sectors = fetch_kaipanla_sectors()
-        if sectors:
-            sources['kaipanla'] = True
+        sector_source = APP_CONFIG.get('sector_source', 'kaipanla')
+        if sector_source == 'eastmoney':
+            sectors = fetch_eastmoney_sectors()
+            if sectors:
+                sources['eastmoney'] = True
+            sector_source_label = '东方财富'
+        else:
+            sectors = fetch_kaipanla_sectors()
+            if sectors:
+                sources['kaipanla'] = True
+            sector_source_label = '开盘啦'
 
     return {
         'indices': indices,
@@ -871,7 +1196,7 @@ def gen_sentiment_data():
         'updated_at': datetime.now().strftime('%H:%M:%S'),
         'index_source': 'TDX' if sources.get('tdx') else '东方财富',
         'breadth_source': '东方财富',
-        'sector_source': '开盘啦' if sector_source != 'eastmoney' else '东方财富',
+        'sector_source': sector_source_label,
     }
 
 def get_market_state():
@@ -946,17 +1271,22 @@ def gen_stock_list_from_cache():
 
 async def ws_handler(websocket):
     clients.add(websocket)
+    auth_user = None  # per-connection auth state
     print(f"[WS] +1 客户端 ({len(clients)})")
     try:
         # 发送初始数据：如果有缓存，立即推送股票列表
         init_alerts = all_alerts[:50]
         if not init_alerts and klines_cache:
             init_alerts = gen_stock_list_from_cache()
+        # 获取上证指数K线（放线程池）
+        sh_klines = await asyncio.to_thread(fetch_sh_klines, 60)
         await websocket.send(json.dumps({
             'type': 'init',
             'alerts': init_alerts,
             'market': get_market_state(),
-            'sources': {'tdx': tdx_client is not None, 'klines_cache': len(klines_cache) > 0, 'ashare': ashare_available(), 'ashare_enabled': APP_CONFIG.get('ashare_enabled', False)}
+            'sources': {'tdx': tdx_client is not None, 'klines_cache': len(klines_cache) > 0, 'ashare': ashare_available(), 'ashare_enabled': APP_CONFIG.get('ashare_enabled', False)},
+            'stocks_all': [{'code': c, 'name': n} for c, n in STOCKS],
+            'sh_klines': sh_klines
         }))
         async for msg in websocket:
             try:
@@ -982,11 +1312,181 @@ async def ws_handler(websocket):
                     }))
                     print(f"[K线] {code} {days}日 → {len(klines)}条")
                 elif data.get('action') == 'get_sentiment':
-                    sentiment = await asyncio.to_thread(gen_sentiment_data)
+                    sentiment = await asyncio.to_thread(get_sentiment_cached)
                     await websocket.send(json.dumps({
                         'type': 'sentiment',
                         'data': sentiment
                     }))
+                elif data.get('action') == 'check_watchlist':
+                    codes = data.get('codes', [])
+                    wl_schemes = data.get('schemes', [])
+                    def _check_watchlist():
+                        refresh_klines_cache_if_needed()
+                        quotes = {}
+                        if get_market_state() in ('open', 'call'):
+                            quotes = fetch_realtime_quotes() or {}
+                        results = []
+                        for code in codes:
+                            name = STOCK_NAMES.get(code, code)
+                            klines = klines_cache.get(code, [])
+                            if not klines or len(klines) < 5:
+                                results.append({'code': code, 'name': name, 'matched_schemes': [], 'price': 0, 'change': 0})
+                                continue
+                            q = quotes.get(code)
+                            matched = []
+                            for scheme in wl_schemes:
+                                if not scheme.get('enabled', False):
+                                    continue
+                                conds = scheme.get('conditions', {})
+                                any_enabled = False
+                                all_pass = False
+                                for key, cond in conds.items():
+                                    if not cond.get('enabled', False):
+                                        continue
+                                    any_enabled = True
+                                    if not check_condition(key, cond, code, klines, q):
+                                        break
+                                else:
+                                    if any_enabled:
+                                        all_pass = True
+                                if all_pass:
+                                    matched.append(scheme.get('name', '未命名'))
+                            last_k = klines[-1]
+                            prev_k = klines[-2] if len(klines) >= 2 else last_k
+                            price = q['price'] if q and q.get('price', 0) > 0 else last_k['close']
+                            change = q['change'] if q else round((last_k['close'] - prev_k['close']) / prev_k['close'] * 100, 2) if prev_k['close'] > 0 else 0
+                            results.append({'code': code, 'name': name, 'matched_schemes': matched, 'price': round(price, 2), 'change': round(change, 2)})
+                        return results
+                    wl_results = await asyncio.to_thread(_check_watchlist)
+                    await websocket.send(json.dumps({'type': 'watchlist_results', 'results': wl_results}))
+                    print(f"[自选] 检查 {len(codes)} 只自选股，{sum(1 for r in wl_results if r['matched_schemes'])} 只命中")
+                elif data.get('action') == 'register':
+                    username = (data.get('username') or '').strip()
+                    password = data.get('password', '')
+                    if not username or not password or len(password) < 4:
+                        await websocket.send(json.dumps({'type': 'auth_result', 'success': False, 'error': '用户名和密码不能为空且密码至少4位'}))
+                    else:
+                        ok, err = await asyncio.to_thread(create_user, username, password)
+                        if ok:
+                            user = await asyncio.to_thread(verify_user, username, password)
+                            token = await asyncio.to_thread(create_session, user['id'])
+                            auth_user = user
+                            await websocket.send(json.dumps({'type': 'auth_result', 'success': True, 'token': token, 'user': {'id': user['id'], 'username': user['username'], 'is_admin': user['is_admin']}}))
+                            print(f"[Auth] 新用户注册: {username}")
+                            # ── 云端同步注册 ──
+                            if SUPABASE_LOADED and is_available():
+                                try:
+                                    # 从本地 DB 获取 hash 和 salt
+                                    _conn = sqlite3.connect(DB_FILE)
+                                    _row = _conn.execute("SELECT password_hash, salt FROM users WHERE id=?", (user['id'],)).fetchone()
+                                    _conn.close()
+                                    if _row:
+                                        cloud_uid = await asyncio.to_thread(cloud_register, username, _row[0], _row[1])
+                                        if cloud_uid:
+                                            _conn2 = sqlite3.connect(DB_FILE)
+                                            _conn2.execute("UPDATE users SET cloud_user_id=? WHERE id=?", (cloud_uid, user['id']))
+                                            _conn2.commit()
+                                            _conn2.close()
+                                            auth_user['cloud_user_id'] = cloud_uid
+                                            expires = (datetime.now() + timedelta(days=7)).isoformat()
+                                            await asyncio.to_thread(cloud_create_session, cloud_uid, token, expires)
+                                            print(f"[Supabase] 用户已同步到云端: {username}")
+                                except Exception as e:
+                                    print(f"[Supabase] 注册同步失败: {e}")
+                                    enqueue_sync(DB_FILE, 'register', {'username': username, 'pw_hash': _row[0], 'salt': _row[1]})
+                        else:
+                            await websocket.send(json.dumps({'type': 'auth_result', 'success': False, 'error': err}))
+                elif data.get('action') == 'login':
+                    username = (data.get('username') or '').strip()
+                    password = data.get('password', '')
+                    user = await asyncio.to_thread(verify_user, username, password)
+                    if user:
+                        token = await asyncio.to_thread(create_session, user['id'])
+                        auth_user = user
+                        saved_wl = await asyncio.to_thread(get_user_watchlist, user['id'])
+                        saved_sc = await asyncio.to_thread(get_user_schemes, user['id'])
+                        # ── 云端数据合并 ──
+                        if SUPABASE_LOADED and is_available() and user.get('cloud_user_id'):
+                            try:
+                                cloud_wl = await asyncio.to_thread(cloud_get_watchlist, user['cloud_user_id'])
+                                cloud_sc = await asyncio.to_thread(cloud_get_schemes, user['cloud_user_id'])
+                                if cloud_wl:
+                                    saved_wl = merge_watchlists(saved_wl, cloud_wl)
+                                if cloud_sc is not None:
+                                    saved_sc = cloud_sc
+                            except Exception as e:
+                                print(f"[Supabase] 登录数据合并失败: {e}")
+                        await websocket.send(json.dumps({
+                            'type': 'auth_result', 'success': True, 'token': token,
+                            'user': {'id': user['id'], 'username': user['username'], 'is_admin': user['is_admin']},
+                            'saved_watchlist': saved_wl, 'saved_schemes': saved_sc
+                        }))
+                        print(f"[Auth] 用户登录: {username}")
+                    else:
+                        await websocket.send(json.dumps({'type': 'auth_result', 'success': False, 'error': '用户名或密码错误'}))
+                elif data.get('action') == 'auth_token':
+                    token = data.get('token', '')
+                    user = await asyncio.to_thread(get_user_by_token, token)
+                    if user:
+                        auth_user = user
+                        saved_wl = await asyncio.to_thread(get_user_watchlist, user['id'])
+                        saved_sc = await asyncio.to_thread(get_user_schemes, user['id'])
+                        # ── 云端数据合并 ──
+                        if SUPABASE_LOADED and is_available() and user.get('cloud_user_id'):
+                            try:
+                                cloud_wl = await asyncio.to_thread(cloud_get_watchlist, user['cloud_user_id'])
+                                cloud_sc = await asyncio.to_thread(cloud_get_schemes, user['cloud_user_id'])
+                                if cloud_wl:
+                                    saved_wl = merge_watchlists(saved_wl, cloud_wl)
+                                if cloud_sc is not None:
+                                    saved_sc = cloud_sc
+                            except Exception as e:
+                                print(f"[Supabase] token登录数据合并失败: {e}")
+                        await websocket.send(json.dumps({
+                            'type': 'auth_result', 'success': True,
+                            'user': {'id': user['id'], 'username': user['username'], 'is_admin': user['is_admin']},
+                            'saved_watchlist': saved_wl, 'saved_schemes': saved_sc
+                        }))
+                    else:
+                        await websocket.send(json.dumps({'type': 'auth_result', 'success': False, 'error': 'token已过期'}))
+                elif data.get('action') == 'sync_watchlist':
+                    if auth_user:
+                        codes = data.get('codes', [])
+                        await asyncio.to_thread(save_user_watchlist, auth_user['id'], codes)
+                        await websocket.send(json.dumps({'type': 'sync_ok', 'what': 'watchlist'}))
+                        # ── 异步推送云端 ──
+                        if SUPABASE_LOADED and is_available() and auth_user.get('cloud_user_id'):
+                            asyncio.create_task(asyncio.to_thread(cloud_save_watchlist, auth_user['cloud_user_id'], codes))
+                elif data.get('action') == 'sync_schemes':
+                    if auth_user:
+                        sc_data = data.get('schemes', [])
+                        await asyncio.to_thread(save_user_schemes, auth_user['id'], json.dumps(sc_data))
+                        await websocket.send(json.dumps({'type': 'sync_ok', 'what': 'schemes'}))
+                        # ── 异步推送云端 ──
+                        if SUPABASE_LOADED and is_available() and auth_user.get('cloud_user_id'):
+                            asyncio.create_task(asyncio.to_thread(cloud_save_schemes, auth_user['cloud_user_id'], json.dumps(sc_data)))
+                elif data.get('action') == 'admin_get_users':
+                    if auth_user and auth_user.get('is_admin'):
+                        users_data = await asyncio.to_thread(get_all_users_admin)
+                        await websocket.send(json.dumps({'type': 'admin_users', 'users': users_data}))
+                elif data.get('action') == 'admin_set_sectors':
+                    global ADMIN_CUSTOM_SECTORS
+                    if auth_user and auth_user.get('is_admin'):
+                        ADMIN_CUSTOM_SECTORS = data.get('sectors', [])
+                        # 清除情绪缓存使新数据立即生效
+                        global _sentiment_cache
+                        _sentiment_cache = {'data': None, 'ts': 0}
+                        await websocket.send(json.dumps({'type': 'admin_sectors_ok', 'count': len(ADMIN_CUSTOM_SECTORS)}))
+                        print(f"[Admin] 自定义板块数据已更新: {len(ADMIN_CUSTOM_SECTORS)} 条")
+                elif data.get('action') == 'logout':
+                    auth_user = None
+                    await websocket.send(json.dumps({'type': 'auth_result', 'success': False, 'error': '已退出'}))
+                elif data.get('action') == 'set_sync_mode':
+                    enabled = bool(data.get('enabled', True))
+                    if SUPABASE_LOADED:
+                        set_sync_enabled(enabled)
+                    await websocket.send(json.dumps({'type': 'sync_mode', 'enabled': enabled}))
+                    print(f"[同步] 云同步已{'开启' if enabled else '关闭'}")
                 elif data.get('action') == 'update_config':
                     cfg = data.get('config', {})
                     if isinstance(cfg, dict):
@@ -1055,17 +1555,30 @@ async def scan_loop():
     # 启动时先连接通达信（放线程池，不阻塞事件循环）
     await asyncio.to_thread(get_tdx)
 
+    # 加载流通股本数据（用于 marketCap 条件）
+    await asyncio.to_thread(load_float_shares)
+
     _prev_state = ''
     _kline_update_count = 0
+    _sentiment_broadcast_count = 0
+    _last_queue_drain = time.time()
 
     while True:
         try:
             state = get_market_state()
 
+            # ── 定期消费同步队列（每60秒）──
+            if SUPABASE_LOADED and time.time() - _last_queue_drain > 60:
+                asyncio.create_task(asyncio.to_thread(drain_sync_queue, DB_FILE))
+                _last_queue_drain = time.time()
+
             # 盘中扫描
             if state in ('open', 'call'):
                 quotes = await asyncio.to_thread(fetch_realtime_quotes)
                 if quotes:
+                    # ⓪ 记录价格历史（供 shortRise/breakMinMA 使用）
+                    record_price_history(quotes)
+
                     # ① 检测异动
                     new_alerts = detect_alerts(quotes)
                     if new_alerts:
@@ -1083,6 +1596,15 @@ async def scan_loop():
                     _kline_update_count += 1
                     if _kline_update_count % 100 == 0:  # 每300秒(5分钟)打印一次
                         print(f"[K线] 已实时更新 {updated} 只股票的当天K线 (第{_kline_update_count}轮)")
+
+                    # ③ 每30秒广播情绪数据
+                    _sentiment_broadcast_count += 1
+                    if _sentiment_broadcast_count % 10 == 0:
+                        try:
+                            sentiment = await asyncio.to_thread(get_sentiment_cached)
+                            await broadcast({'type': 'sentiment', 'data': sentiment})
+                        except Exception as e:
+                            print(f"[情绪] 广播失败: {e}")
                 else:
                     print("[扫描] 未获取到行情数据")
 
@@ -1103,7 +1625,7 @@ async def scan_loop():
 
         await asyncio.sleep(3)
 
-FRONTEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'frontend')
+FRONTEND_DIR = os.path.join(_get_resource_dir(), 'frontend')
 
 async def health_check(connection, request: Request):
     """处理 HTTP 请求：非 WebSocket 升级请求返回 HTTP 响应，WebSocket 请求放行"""
@@ -1127,13 +1649,19 @@ async def health_check(connection, request: Request):
     return Response(404, "Not Found", Headers({"Content-Type": "text/plain"}), b"Not found\n")
 
 async def main():
+    init_db()
+    # ── 初始化 Supabase ──
+    if SUPABASE_LOADED:
+        supabase_ok = init_supabase()
+        print(f"[Supabase] 初始化 {'成功' if supabase_ok else '跳过(未配置)'}")
+    bind_host = "127.0.0.1" if getattr(sys, 'frozen', False) else "0.0.0.0"
     server = await websockets.serve(
-        ws_handler, "0.0.0.0", WS_PORT,
+        ws_handler, bind_host, WS_PORT,
         process_request=health_check,
         ping_interval=20,
         ping_timeout=20,
     )
-    print(f"[StockRadar] ws://0.0.0.0:{WS_PORT} (mootdx 真实行情)")
+    print(f"[StockRadar] ws://{bind_host}:{WS_PORT} (mootdx 真实行情)")
 
     # 启动时优先从本地JSON文件加载K线（毫秒级，不阻塞）
     print("[启动] 尝试从本地文件加载K线缓存...")

@@ -6,7 +6,11 @@ import asyncio
 import json
 import time
 import random
+import os
+import mimetypes
 import websockets
+from websockets.http11 import Response
+from websockets.datastructures import Headers
 
 WS_PORT = 9876
 
@@ -170,9 +174,30 @@ async def feed_loop():
         await broadcast({'type': 'alerts', 'items': [alert]})
         print(f"[推送] {alert['name']} {alert['label']} {'+' if alert['change']>=0 else ''}{alert['change']}% {alert.get('concepts','')}")
 
+FRONTEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'frontend')
+
+async def process_request(connection, request):
+    """HTTP 请求时返回静态文件，WebSocket 升级请求则跳过"""
+    if request.headers.get('Upgrade', '').lower() == 'websocket':
+        return None
+    path = request.path
+    if path == '/':
+        path = '/index.html'
+    file_path = os.path.join(FRONTEND_DIR, path.lstrip('/'))
+    if os.path.isfile(file_path):
+        content_type, _ = mimetypes.guess_type(file_path)
+        if content_type is None:
+            content_type = 'application/octet-stream'
+        with open(file_path, 'rb') as f:
+            body = f.read()
+        headers = Headers([('Content-Type', content_type), ('Content-Length', str(len(body)))])
+        return Response(200, 'OK', headers, body)
+    headers = Headers([('Content-Type', 'text/plain')])
+    return Response(404, 'Not Found', headers, b'File not found')
+
 async def main():
-    server = await websockets.serve(ws_handler, "localhost", WS_PORT)
-    print(f"[演示引擎v2] ws://localhost:{WS_PORT}")
+    server = await websockets.serve(ws_handler, "localhost", WS_PORT, process_request=process_request)
+    print(f"[演示引擎v2] http://localhost:{WS_PORT}  (ws + 静态文件)")
     await feed_loop()
 
 if __name__ == '__main__':

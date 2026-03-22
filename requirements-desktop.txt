@@ -1,0 +1,4 @@
+# StockRadar 桌面版额外依赖
+pyobjc-framework-WebKit>=10.0
+Pillow>=10.0
+pyinstaller>=6.0

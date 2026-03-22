@@ -12,3 +12,18 @@ recordings/
 
 # 编辑器
 .claude/
+
+# PyInstaller 打包产物
+build/
+dist/
+
+# 数据库（本地运行时数据）
+stockradar.db
+
+# 截图 / 调试图片
+*.png
+*.jpg
+
+# macOS
+.DS_Store
+.playwright-mcp/

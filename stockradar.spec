@@ -1,0 +1,91 @@
+# -*- mode: python ; coding: utf-8 -*-
+"""StockRadar PyInstaller 打包配置"""
+
+block_cipher = None
+
+a = Analysis(
+    ['app.py'],
+    pathex=[],
+    binaries=[],
+    datas=[
+        ('frontend', 'frontend'),
+        ('klines_data.json', '.'),
+        ('assets/tray_icon.png', 'assets'),
+    ],
+    hiddenimports=[
+        'server',
+        'ashare_adapter',
+        'mootdx',
+        'mootdx.quotes',
+        'mootdx.consts',
+        'mootdx.utils',
+        'tdxpy',
+        'websockets',
+        'websockets.asyncio',
+        'websockets.asyncio.server',
+        'websockets.datastructures',
+        'pandas',
+        'numpy',
+        'requests',
+        'rumps',
+        'objc',
+        'AppKit',
+        'Foundation',
+        'WebKit',
+        'PyObjCTools',
+        'PyObjCTools.AppHelper',
+    ],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=['tkinter', 'matplotlib', 'scipy'],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
+    noarchive=False,
+)
+
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name='StockRadar',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    console=False,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name='StockRadar',
+)
+
+app = BUNDLE(
+    coll,
+    name='StockRadar.app',
+    icon='assets/app_icon.icns',
+    bundle_identifier='com.stockradar.desktop',
+    info_plist={
+        'NSPrincipalClass': 'NSApplication',
+        'NSAppleScriptEnabled': False,
+        'CFBundleShortVersionString': '1.2.0',
+        'CFBundleDisplayName': 'StockRadar',
+        'LSUIElement': True,
+    },
+)

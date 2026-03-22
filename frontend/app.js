@@ -60,6 +60,44 @@ const CONDITION_DEFS = [
   { key:'amountCompare', label:'成交额组合比较', unit:'', fields:[], dynamic:true },
 ];
 
+/* ── 方案模板 ── */
+const SCHEME_TEMPLATES = [
+  {
+    id: 'tpl_volume_break',
+    name: '放量突破',
+    desc: '量比≥2 + 突破5日均线',
+    conditions: {
+      volumeRatio: { enabled: true, min: 2 },
+      breakDayMA: { enabled: true, period: 5 },
+    }
+  },
+  {
+    id: 'tpl_limit_up',
+    name: '涨停捕捉',
+    desc: '捕捉涨停板个股',
+    conditions: {
+      limitUp: { enabled: true },
+    }
+  },
+  {
+    id: 'tpl_amount_surge',
+    name: '量价齐升',
+    desc: '成交额创5天新高 + 量比≥1.5',
+    conditions: {
+      amountHigh: { enabled: true, days: 5 },
+      volumeRatio: { enabled: true, min: 1.5 },
+    }
+  },
+  {
+    id: 'tpl_bollinger',
+    name: '布林突破',
+    desc: '突破20日布林线上轨',
+    conditions: {
+      bollingerUp: { enabled: true, band: 'upper', period: '20d' },
+    }
+  },
+];
+
 /* ── 状态 ── */
 let schemes = JSON.parse(localStorage.getItem('stock-radar-schemes')) || JSON.parse(JSON.stringify(DEFAULT_SCHEMES));
 let alerts = [];
@@ -385,6 +423,25 @@ function renderList(newIds) {
   });
 }
 
+/* ── 从模板创建方案 ── */
+function createFromTemplate(templateId) {
+  const tpl = SCHEME_TEMPLATES.find(t => t.id === templateId);
+  if (!tpl) return;
+  const base = JSON.parse(JSON.stringify(DEFAULT_SCHEMES[0].conditions));
+  for (const [key, val] of Object.entries(tpl.conditions)) {
+    base[key] = { ...base[key], ...val };
+  }
+  schemes.push({
+    id: 'scheme_' + Date.now(),
+    name: tpl.name,
+    enabled: true,
+    conditions: base,
+  });
+  saveSchemes();
+  renderSettings();
+  renderSchemeBar();
+}
+
 /* ── 方案栏渲染 ── */
 function renderSchemeBar() {
   let html = schemes.map(s => {
@@ -550,7 +607,8 @@ function renderSettings() {
     }
     html += `</div>`;
   }
-  html += `</div><div style="display:flex;gap:6px;padding:4px 8px 10px;"><button class="add-scheme-btn" id="addSchemeBtn" style="flex:1;margin:0;">＋ 新建方案</button></div>`;
+  let tplOpts = SCHEME_TEMPLATES.map(t => `<option value="${t.id}">${t.name} — ${t.desc}</option>`).join('');
+  html += `</div><div style="display:flex;gap:6px;padding:4px 8px 10px;"><select id="templateSelect" class="template-select"><option value="">📋 从模板创建…</option>${tplOpts}</select><button class="add-scheme-btn" id="addSchemeBtn" style="flex:1;margin:0;">＋ 新建空白方案</button></div>`;
   settingsPanel.innerHTML = html;
   bindSettingsEvents();
 }
@@ -1050,5 +1108,13 @@ function bindSettingsEvents() {
       conditions: { marketCap:{enabled:false,min:20,max:200}, bigOrder:{enabled:false,ratio:0.1}, amountHigh:{enabled:false,days:5}, amountLow:{enabled:false,days:5}, limitUp:{enabled:false}, limitDown:{enabled:false}, shortRise:{enabled:false,seconds:60,percent:3}, breakMinMA:{enabled:false,minutes:5}, breakDayMA:{enabled:false,period:5}, breakGolden:{enabled:false,days:20,ratio:0.382}, amountMultiple:{enabled:false,multiple:2}, volumeRatio:{enabled:false,min:2}, bollingerUp:{enabled:false,band:'upper',period:'20d'}, bollingerDown:{enabled:false,band:'lower',period:'20d'}, cupHandle:{enabled:false,days:20,dayA:5,dayB:10,minPct:10,maxPct:30}, priceCompare:{enabled:false,rules:[{dayL:1,fieldL:'close',op:'gt',dayR:2,fieldR:'close'}]}, amountCompare:{enabled:false,rules:[{dayL:1,op:'gt',dayR:2}]} }
     });
     saveSchemes(); renderSettings(); renderSchemeBar();
+  });
+
+  document.getElementById('templateSelect')?.addEventListener('change', (e) => {
+    const val = e.target.value;
+    if (val) {
+      createFromTemplate(val);
+      e.target.value = '';
+    }
   });
 }

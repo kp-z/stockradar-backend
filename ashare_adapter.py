@@ -3,8 +3,13 @@
 # 注意：所有函数均为同步阻塞，调用方必须在 asyncio.to_thread() 中使用
 
 import sys
+import os
 
-sys.path.insert(0, '/Users/kp/项目/Proj/Ashare')
+# 从项目 lib/ 目录导入 Ashare
+_base_dir = os.path.dirname(os.path.abspath(__file__))
+_lib_dir = os.path.join(_base_dir, 'lib')
+if os.path.isdir(_lib_dir) and _lib_dir not in sys.path:
+    sys.path.insert(0, _lib_dir)
 
 try:
     from Ashare import get_price
@@ -55,6 +60,55 @@ def fetch_klines_ashare(code: str, days: int = 150) -> list:
         return df_to_kline_list(df)
     except Exception as e:
         print(f"[Ashare] {code} 获取失败: {e}")
+        return []
+
+
+def fetch_index_klines_ashare(symbol: str, days: int = 60) -> list:
+    """获取指数K线，symbol 为 Ashare 格式如 sh000001（上证指数）。
+    Ashare 不可用时直接调新浪财经 API 回退。"""
+    if _ASHARE_AVAILABLE:
+        try:
+            df = get_price(symbol, count=days, frequency='1d')
+            if df is not None and not df.empty:
+                return df_to_kline_list(df)
+        except Exception as e:
+            print(f"[Ashare] 指数 {symbol} 获取失败: {e}")
+    # 回退：直接用新浪财经 API
+    return _fetch_index_klines_sina(symbol, days)
+
+
+def _fetch_index_klines_sina(symbol: str, days: int = 60) -> list:
+    """通过新浪财经 API 获取指数日K线数据"""
+    import requests
+    try:
+        url = f"https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData"
+        params = {
+            'symbol': symbol,
+            'scale': 240,  # 日线
+            'ma': 'no',
+            'datalen': days,
+        }
+        r = requests.get(url, params=params, timeout=10,
+                         headers={'User-Agent': 'Mozilla/5.0', 'Referer': 'https://finance.sina.com.cn'})
+        if r.status_code != 200:
+            return []
+        data = r.json()
+        result = []
+        for item in data:
+            result.append({
+                'date': item.get('day', '')[:10],
+                'open': round(float(item.get('open', 0)), 2),
+                'close': round(float(item.get('close', 0)), 2),
+                'high': round(float(item.get('high', 0)), 2),
+                'low': round(float(item.get('low', 0)), 2),
+                'volume': float(item.get('volume', 0)),
+                'amount': 0.0,
+            })
+        if result:
+            print(f"[Sina] 指数 {symbol} K线获取成功: {len(result)} 条")
+        return result
+    except Exception as e:
+        print(f"[Sina] 指数 {symbol} 获取失败: {e}")
         return []
 
 
