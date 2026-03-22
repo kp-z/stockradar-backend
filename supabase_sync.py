@@ -14,10 +14,12 @@ from datetime import datetime, timedelta
 
 logger = logging.getLogger("supabase_sync")
 
-# ── 加载 .env 文件 ──
+# ── 加载 .env 文件（开发环境用） ──
 def _load_dotenv():
-    """手动加载 .env 文件，不依赖 python-dotenv 包。"""
-    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
+    """手动加载 .env 文件，不依赖 python-dotenv 包。打包后不存在则跳过。"""
+    import sys
+    base = sys._MEIPASS if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
+    env_path = os.path.join(base, '.env')
     if not os.path.exists(env_path):
         return
     with open(env_path, 'r') as f:
@@ -32,9 +34,11 @@ def _load_dotenv():
 
 _load_dotenv()
 
-# ── Supabase 配置 ──
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
-SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
+# ── Supabase 配置（内置默认值，优先读环境变量） ──
+_DEFAULT_URL = "https://evygicwjaadxicvmdejo.supabase.co"
+_DEFAULT_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV2eWdpY3dqYWFkeGljdm1kZWpvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDE4MjY4OCwiZXhwIjoyMDg5NzU4Njg4fQ.SMj3vCMhE328Dtc435nwnoYW_DtoutNh0a2w3hJqzoE"
+SUPABASE_URL = os.environ.get("SUPABASE_URL", _DEFAULT_URL)
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", _DEFAULT_KEY)
 
 _initialized = False
 _sync_enabled = True
