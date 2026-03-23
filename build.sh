@@ -35,6 +35,7 @@ if [ -d "dist/StockRadar.app" ]; then
     rm -rf dist/dmg_staging
     mkdir -p dist/dmg_staging
     cp -r dist/StockRadar.app dist/dmg_staging/
+    cp install.command dist/dmg_staging/
     ln -s /Applications dist/dmg_staging/Applications
     hdiutil create -volname "StockRadar" \
         -srcfolder dist/dmg_staging \
@@ -47,8 +48,7 @@ if [ -d "dist/StockRadar.app" ]; then
     echo "  DMG: dist/StockRadar.dmg"
     du -sh dist/StockRadar.dmg
     echo ""
-    echo "  安装方式: 双击 DMG → 拖入 Applications → 右键选「打开」"
-    echo "  首次打开若提示损坏，在终端执行: xattr -cr /Applications/StockRadar.app"
+    echo "  安装方式: 双击 DMG → 拖入 Applications → 双击「install.command」完成安装"
 else
     echo "[错误] 打包失败，请检查日志"
     exit 1
