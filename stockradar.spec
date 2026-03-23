@@ -85,7 +85,7 @@ app = BUNDLE(
     info_plist={
         'NSPrincipalClass': 'NSApplication',
         'NSAppleScriptEnabled': False,
-        'CFBundleShortVersionString': '1.6.0',
+        'CFBundleShortVersionString': '1.7.0',
         'CFBundleDisplayName': 'StockRadar',
         'LSUIElement': True,
     },
