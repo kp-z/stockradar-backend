@@ -557,6 +557,12 @@
           <button id="kvZoomOut" title="缩小（减少天数）↑">−</button>
           <span class="kv-days" id="kvDaysLabel">60日</span>
           <button id="kvZoomIn" title="放大（增加天数）↓">+</button>
+          <label style="margin-left:8px;font-size:11px;color:var(--muted);cursor:pointer;display:flex;align-items:center;gap:3px;">
+            <input type="checkbox" id="kvBollinger" style="cursor:pointer;"> 布林
+          </label>
+          <label id="kvBreakGoldenLabel" style="margin-left:6px;font-size:11px;color:var(--muted);cursor:pointer;display:flex;align-items:center;gap:3px;opacity:0.4;">
+            <input type="checkbox" id="kvBreakGolden" style="cursor:pointer;" disabled> 回撤值
+          </label>
         </div>
       </div>
       <div class="kline-viewer-body" id="kvBody">
@@ -668,11 +674,10 @@ const DEFAULT_SCHEMES = [{
     shortRise:      { enabled: false, seconds: 60, percent: 3 },
     breakMinMA:     { enabled: false, minutes: 5 },
     breakDayMA:     { enabled: false, period: 5 },
-    breakGolden:    { enabled: false, days: 20, ratio: 0.382 },
+    breakGolden:    { enabled: false, days: 20, ratio: 0.382, mode: 'cross' },
     amountMultiple: { enabled: false, multiple: 2 },
     volumeRatio:    { enabled: false, min: 2 },
-    bollingerUp:    { enabled: false, band: 'upper', period: '20d' },
-    bollingerDown:  { enabled: false, band: 'lower', period: '20d' },
+    bollinger:      { enabled: false, rules: [{ direction: 'up', band: 'upper', period: '20d', mode: 'cross' }] },
     cupHandle:      { enabled: false, days: 20, dayA: 5, dayB: 10, minPct: 10, maxPct: 30 },
   }
 }];
@@ -691,8 +696,7 @@ const CONDITION_DEFS = [
   { key:'amountMultiple', label:'今日成交金额≥昨日X倍', unit:'倍', fields:['multiple'] },
   { key:'volumeRatio',   label:'量比 ≥', unit:'', fields:['min'] },
   { key:'cupHandle',     label:'杯柄形态', unit:'', fields:['days','dayA','dayB','minPct','maxPct'], multiLine:true },
-  { key:'bollingerUp',   label:'突破布林线', unit:'', fields:['band','period'] },
-  { key:'bollingerDown', label:'跌破布林线', unit:'', fields:['band','period'] },
+  { key:'bollinger',     label:'布林线条件', unit:'', fields:[], dynamic:true },
   { key:'priceCompare',  label:'价格组合比较', unit:'', fields:[], dynamic:true },
   { key:'amountCompare', label:'成交额组合比较', unit:'', fields:[], dynamic:true },
 ];
@@ -759,6 +763,7 @@ function saveSchemes() {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ action: 'update_schemes', schemes }));
   }
+  syncBreakGoldenCheckbox();
 }
 
 /* ── 项目配置函数 ── */
@@ -882,6 +887,9 @@ opacitySlider?.addEventListener('input', e => { const v=Number(e.target.value)/1
 let kvCurrentCode = '';
 let kvCurrentName = '';
 let kvDays = 60;
+let kvShowBollinger = false;
+let kvShowBreakGolden = false;
+let kvLastKlines = null;
 const KV_MIN_DAYS = 10;
 const KV_MAX_DAYS = 150;
 const KV_STEP = 10;
@@ -1104,6 +1112,72 @@ function drawKlineViewer(klines) {
   ctx.font = '11px sans-serif';
   ctx.textAlign = 'right';
   ctx.fillText(kvCurrentName + ' ' + kvCurrentCode + ' ' + kvDays + '日K线', W - padRight, 14);
+
+  // ── 布林线叠加层 ──
+  if (kvShowBollinger && data.length >= 20) {
+    ctx.save();
+    ctx.setLineDash([4, 3]);
+    ctx.lineWidth = 1;
+    const bollUpper = [], bollLower = [];
+    for (let i = 0; i < data.length; i++) {
+      if (i < 19) { bollUpper.push(null); bollLower.push(null); continue; }
+      const slice = closes.slice(i - 19, i + 1);
+      const sma = slice.reduce((a, b) => a + b, 0) / 20;
+      const std = Math.sqrt(slice.reduce((s, v) => s + (v - sma) ** 2, 0) / 20);
+      bollUpper.push(sma + 2 * std);
+      bollLower.push(sma - 2 * std);
+    }
+    ctx.strokeStyle = 'rgba(59,130,246,0.8)';
+    let started = false;
+    ctx.beginPath();
+    for (let i = 0; i < data.length; i++) {
+      if (bollUpper[i] === null) continue;
+      const x = padLeft + (i + 0.5) * barW;
+      const y = padTop + (hi - bollUpper[i]) / totalRange * chartH;
+      if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    started = false;
+    ctx.beginPath();
+    for (let i = 0; i < data.length; i++) {
+      if (bollLower[i] === null) continue;
+      const x = padLeft + (i + 0.5) * barW;
+      const y = padTop + (hi - bollLower[i]) / totalRange * chartH;
+      if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ── 突破回撤值叠加层 ──
+  if (kvShowBreakGolden) {
+    const bg = getActiveBreakGolden();
+    if (bg) {
+      const { days: bgDays, ratio } = bg;
+      const useData = data.slice(-100);
+      const offset = data.length - useData.length;
+      const bgValues = [];
+      for (let i = 0; i < useData.length; i++) {
+        const start = Math.max(0, i - bgDays + 1);
+        const win = useData.slice(start, i + 1);
+        const winHigh = Math.max(...win.map(k => k.high));
+        const winLow  = Math.min(...win.map(k => k.low));
+        bgValues.push(winHigh - (winHigh - winLow) * ratio);
+      }
+      ctx.save();
+      ctx.setLineDash([5, 4]);
+      ctx.lineWidth = 1.2;
+      ctx.strokeStyle = 'rgba(251,191,36,0.9)';
+      ctx.beginPath();
+      for (let i = 0; i < bgValues.length; i++) {
+        const x = padLeft + (offset + i + 0.5) * barW;
+        const y = padTop + (hi - bgValues[i]) / totalRange * chartH;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
 }
 
 // 放大缩小
@@ -1139,6 +1213,41 @@ document.addEventListener('keydown', (e) => {
       ws.send(JSON.stringify({ action: 'get_klines', code: kvCurrentCode, days: kvDays }));
     }
   }
+});
+
+// ── 布林线/回撤值 辅助函数 ──
+function getActiveBreakGolden() {
+  for (const s of schemes) {
+    if (s.enabled && s.conditions?.breakGolden?.enabled) {
+      return s.conditions.breakGolden;
+    }
+  }
+  return null;
+}
+
+function syncBreakGoldenCheckbox() {
+  const bg = getActiveBreakGolden();
+  const cb = document.getElementById('kvBreakGolden');
+  const lbl = document.getElementById('kvBreakGoldenLabel');
+  if (!cb || !lbl) return;
+  if (!bg) {
+    cb.checked = false;
+    cb.disabled = true;
+    kvShowBreakGolden = false;
+    lbl.style.opacity = '0.4';
+  } else {
+    cb.disabled = false;
+    lbl.style.opacity = '';
+  }
+}
+
+document.getElementById('kvBollinger')?.addEventListener('change', e => {
+  kvShowBollinger = e.target.checked;
+  if (kvLastKlines) drawKlineViewer(kvLastKlines);
+});
+document.getElementById('kvBreakGolden')?.addEventListener('change', e => {
+  kvShowBreakGolden = e.target.checked;
+  if (kvLastKlines) drawKlineViewer(kvLastKlines);
 });
 
 // 点击 alert-card 事件委托
@@ -1180,12 +1289,12 @@ function connectWS() {
     alertList.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-title">加载中…</div><div class="empty-desc">正在拉取股票数据</div></div>';
   };
   ws.onmessage = e => { try { const d = JSON.parse(e.data);
-    if (d.type==='init') { alerts=d.alerts||[]; for(const a of alerts){if(a.klines&&a.klines.length)klinesMap[a.id]=a.klines;} if(d.market)updateMarketLabel(d.market); if(d.sources)updateSourceDots(d.sources); renderList(); }
+    if (d.type==='init') { alerts=d.alerts||[]; for(const a of alerts){if(a.klines&&a.klines.length)klinesMap[a.id]=a.klines;} if(d.market)updateMarketLabel(d.market); if(d.sources)updateSourceDots(d.sources); renderList(); syncBreakGoldenCheckbox(); }
     if (d.type==='alerts') { const items=d.items||[],ids=items.map(i=>i.id); for(const a of items){if(a.klines&&a.klines.length)klinesMap[a.id]=a.klines;} alerts=[...items,...alerts].slice(0,200); renderList(ids); alertList.scrollTop=0; }
     if (d.type==='market') updateMarketLabel(d.state);
     if (d.type==='sentiment') { sentimentData = d.data; if(d.data.sources)updateSourceDots(d.data.sources); renderRightSentiment(d.data); }
     if (d.type==='screen_results') { if (d.alerts && d.alerts.length > 0) { alerts = d.alerts; } renderList(); }
-    if (d.type==='klines') { drawKlineViewer(d.data); }
+    if (d.type==='klines') { kvLastKlines = d.data; drawKlineViewer(d.data); }
     if (d.type==='sector_stocks') {
       // 板块股票数据返回，填充对应的展开区域
       const sectorName = d.sector_name;
@@ -1340,6 +1449,10 @@ function renderSettings() {
       } else if (def.key === 'breakGolden') {
         html += `<input type="number" class="cond-input" data-scheme="${s.id}" data-key="breakGolden" data-field="days" value="${cond.days||20}" step="1" /><span class="cond-unit">天内</span>`;
         html += `<input type="number" class="cond-input w70" data-scheme="${s.id}" data-key="breakGolden" data-field="ratio" value="${cond.ratio||0.382}" step="0.001" /><span class="cond-unit">系数</span>`;
+        const bgMode = cond.mode || 'cross';
+        html += `<select class="cond-input" style="width:88px;" data-scheme="${s.id}" data-key="breakGolden" data-field="mode">`;
+        html += `<option value="cross" ${bgMode==='cross'?'selected':''}>仅当天突破</option>`;
+        html += `<option value="above" ${bgMode==='above'?'selected':''}>当前在上方</option></select>`;
         html += `<div style="font-size:9px;color:var(--muted);margin:1px 0 0 20px;">最高价 −（最高价 − 最低价）× 系数</div>`;
       } else if (def.key === 'amountMultiple') {
         html += `<input type="number" class="cond-input" data-scheme="${s.id}" data-key="amountMultiple" data-field="multiple" value="${cond.multiple||2}" step="0.5" /><span class="cond-unit">倍</span>`;
@@ -1356,6 +1469,22 @@ function renderSettings() {
         html += `<option value="20d" ${period==='20d'?'selected':''}>20日</option>`;
         html += `<option value="5d" ${period==='5d'?'selected':''}>5日</option>`;
         html += `<option value="30m" ${period==='30m'?'selected':''}>30分钟</option></select>`;
+      } else if (def.key === 'bollinger') {
+        // 动态多行布林线条件
+        const rules = cond.rules || [{ direction: 'up', band: 'upper', period: '20d', mode: 'cross' }];
+        html += `</div>`;
+        rules.forEach((rule, ri) => {
+          html += `<div class="condition-row bl-rule" style="padding-left:20px;flex-wrap:wrap;gap:3px;" data-scheme="${s.id}" data-key="bollinger" data-ri="${ri}">`;
+          html += `<select class="cond-input bl-field" data-f="direction" style="width:58px;"><option value="up" ${rule.direction==='up'?'selected':''}>上穿</option><option value="down" ${rule.direction==='down'?'selected':''}>下穿</option></select>`;
+          html += `<select class="cond-input bl-field" data-f="band" style="width:52px;"><option value="upper" ${rule.band==='upper'?'selected':''}>上轨</option><option value="middle" ${rule.band==='middle'?'selected':''}>中轨</option><option value="lower" ${rule.band==='lower'?'selected':''}>下轨</option></select>`;
+          html += `<select class="cond-input bl-field" data-f="period" style="width:52px;"><option value="20d" ${rule.period==='20d'?'selected':''}>20日</option><option value="5d" ${rule.period==='5d'?'selected':''}>5日</option></select>`;
+          const bMode = rule.mode || 'cross';
+          html += `<select class="cond-input bl-field" data-f="mode" style="width:88px;"><option value="cross" ${bMode==='cross'?'selected':''}>仅当天突破</option><option value="current" ${bMode==='current'?'selected':''}>当前在上/下方</option></select>`;
+          if (ri > 0) html += `<button class="bl-del-btn" data-scheme="${s.id}" data-key="bollinger" data-ri="${ri}" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:13px;padding:0 2px;">✕</button>`;
+          html += `</div>`;
+        });
+        html += `<div class="condition-row" style="padding-left:20px;"><button class="bl-add-btn" data-scheme="${s.id}" data-key="bollinger" style="background:none;border:1px dashed var(--border);color:var(--accent);cursor:pointer;font-size:11px;padding:2px 10px;border-radius:4px;">＋ 增加条件</button></div>`;
+        html += `<div`; // dummy open tag
       } else if (def.key === 'cupHandle') {
         html += `</div><div class="condition-row" style="padding-left:20px;flex-wrap:wrap;gap:4px;">`;
         html += `<span class="cond-unit" style="color:var(--muted);">现价突破最近</span>`;
@@ -2006,9 +2135,41 @@ function bindSettingsEvents() {
     });
   });
 
+  // ── 布林线条件：动态行事件 ──
+  settingsPanel.querySelectorAll('.bl-add-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const sc = schemes.find(x => x.id === btn.dataset.scheme);
+      if (!sc) return;
+      if (!sc.conditions.bollinger) sc.conditions.bollinger = { enabled: false, rules: [] };
+      if (!sc.conditions.bollinger.rules) sc.conditions.bollinger.rules = [];
+      sc.conditions.bollinger.rules.push({ direction: 'up', band: 'upper', period: '20d', mode: 'cross' });
+      saveSchemes(); renderSettings();
+    });
+  });
+  settingsPanel.querySelectorAll('.bl-del-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const sc = schemes.find(x => x.id === btn.dataset.scheme);
+      if (!sc || !sc.conditions.bollinger?.rules) return;
+      sc.conditions.bollinger.rules.splice(parseInt(btn.dataset.ri), 1);
+      saveSchemes(); renderSettings();
+    });
+  });
+  settingsPanel.querySelectorAll('.bl-rule .bl-field').forEach(inp => {
+    inp.addEventListener('change', () => {
+      const row = inp.closest('.bl-rule');
+      if (!row) return;
+      const sc = schemes.find(x => x.id === row.dataset.scheme);
+      if (!sc || !sc.conditions.bollinger?.rules) return;
+      const rule = sc.conditions.bollinger.rules[parseInt(row.dataset.ri)];
+      if (!rule) return;
+      rule[inp.dataset.f] = inp.value;
+      saveSchemes();
+    });
+  });
+
   document.getElementById('addSchemeBtn')?.addEventListener('click', () => {
     schemes.push({ id: 'scheme_' + Date.now(), name: `方案${schemes.length + 1}`, enabled: true,
-      conditions: { marketCap:{enabled:false,min:20,max:200}, bigOrder:{enabled:false,ratio:0.1}, amountHigh:{enabled:false,days:5}, amountLow:{enabled:false,days:5}, limitUp:{enabled:false}, limitDown:{enabled:false}, shortRise:{enabled:false,seconds:60,percent:3}, breakMinMA:{enabled:false,minutes:5}, breakDayMA:{enabled:false,period:5}, breakGolden:{enabled:false,days:20,ratio:0.382}, amountMultiple:{enabled:false,multiple:2}, volumeRatio:{enabled:false,min:2}, bollingerUp:{enabled:false,band:'upper',period:'20d'}, bollingerDown:{enabled:false,band:'lower',period:'20d'}, cupHandle:{enabled:false,days:20,dayA:5,dayB:10,minPct:10,maxPct:30}, priceCompare:{enabled:false,rules:[{dayL:1,fieldL:'close',op:'gt',dayR:2,fieldR:'close'}]}, amountCompare:{enabled:false,rules:[{dayL:1,op:'gt',dayR:2}]} }
+      conditions: { marketCap:{enabled:false,min:20,max:200}, bigOrder:{enabled:false,ratio:0.1}, amountHigh:{enabled:false,days:5}, amountLow:{enabled:false,days:5}, limitUp:{enabled:false}, limitDown:{enabled:false}, shortRise:{enabled:false,seconds:60,percent:3}, breakMinMA:{enabled:false,minutes:5}, breakDayMA:{enabled:false,period:5}, breakGolden:{enabled:false,days:20,ratio:0.382,mode:'cross'}, amountMultiple:{enabled:false,multiple:2}, volumeRatio:{enabled:false,min:2}, bollinger:{enabled:false,rules:[{direction:'up',band:'upper',period:'20d',mode:'cross'}]}, cupHandle:{enabled:false,days:20,dayA:5,dayB:10,minPct:10,maxPct:30}, priceCompare:{enabled:false,rules:[{dayL:1,fieldL:'close',op:'gt',dayR:2,fieldR:'close'}]}, amountCompare:{enabled:false,rules:[{dayL:1,op:'gt',dayR:2}]} }
     });
     saveSchemes(); renderSettings(); renderSchemeBar();
   });

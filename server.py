@@ -28,7 +28,7 @@ except ImportError:
     def preload_all_klines_ashare(stocks, days=150): return {}
     def ashare_available(): return False
 
-WS_PORT = int(os.environ.get('PORT', 31749))
+WS_PORT = int(os.environ.get('PORT', 9876))
 
 # ── 运行时配置（可由前端 WS 实时更新） ──
 APP_CONFIG = {
@@ -368,13 +368,17 @@ def check_condition(key, cond, code, klines, q):
         elif key == 'breakGolden':
             days = int(cond.get('days', 20))
             ratio = float(cond.get('ratio', 0.382))
+            mode = cond.get('mode', 'cross')
             if len(klines) < days:
                 return False
             recent = klines[-days:]
             high = max(k['high'] for k in recent)
             low = min(k['low'] for k in recent)
             golden_level = high - (high - low) * ratio
-            return price >= golden_level and closes[-2] < golden_level if len(closes) >= 2 else False
+            if mode == 'above':
+                return price >= golden_level
+            else:  # cross
+                return price >= golden_level and closes[-2] < golden_level if len(closes) >= 2 else False
 
         elif key == 'bollingerUp':
             band = cond.get('band', 'upper')
@@ -407,6 +411,39 @@ def check_condition(key, cond, code, klines, q):
             else:
                 level = sma + 2 * std
             return price <= level and closes[-2] > level if len(closes) >= 2 else False
+
+        elif key == 'bollinger':
+            rules = cond.get('rules', [])
+            if not rules:
+                return False
+            def _boll_level(band, period_str):
+                period = int(period_str.replace('d','').replace('m','')) if isinstance(period_str, str) else 20
+                if len(closes) < period:
+                    return None
+                sma = sum(closes[-period:]) / period
+                std = (sum((c - sma)**2 for c in closes[-period:]) / period) ** 0.5
+                if band == 'upper': return sma + 2 * std
+                elif band == 'lower': return sma - 2 * std
+                else: return sma
+            for rule in rules:
+                direction = rule.get('direction', 'up')
+                band = rule.get('band', 'upper')
+                period_str = rule.get('period', '20d')
+                mode = rule.get('mode', 'cross')
+                level = _boll_level(band, period_str)
+                if level is None:
+                    return False
+                if direction == 'up':
+                    if mode == 'current':
+                        if not (price >= level): return False
+                    else:  # cross
+                        if not (price >= level and len(closes) >= 2 and closes[-2] < level): return False
+                else:  # down
+                    if mode == 'current':
+                        if not (price <= level): return False
+                    else:  # cross
+                        if not (price <= level and len(closes) >= 2 and closes[-2] > level): return False
+            return True
 
         elif key == 'cupHandle':
             days = int(cond.get('days', 20))
