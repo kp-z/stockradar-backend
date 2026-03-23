@@ -26,15 +26,11 @@ pyinstaller stockradar.spec --noconfirm
 
 # 验证
 if [ -d "dist/StockRadar.app" ]; then
-    echo "[3/5] 打包成功!"
+    echo "[3/4] 打包成功!"
     du -sh dist/StockRadar.app
 
-    # 自签名
-    echo "[4/5] 签名中..."
-    codesign --force --deep --sign - dist/StockRadar.app
-
     # 制作 DMG 安装镜像（含 Applications 快捷方式）
-    echo "[5/5] 制作 DMG 安装镜像..."
+    echo "[4/4] 制作 DMG 安装镜像..."
     rm -f dist/StockRadar.dmg
     rm -rf dist/dmg_staging
     mkdir -p dist/dmg_staging
@@ -51,7 +47,8 @@ if [ -d "dist/StockRadar.app" ]; then
     echo "  DMG: dist/StockRadar.dmg"
     du -sh dist/StockRadar.dmg
     echo ""
-    echo "  安装方式: 双击 DMG → 拖入 Applications → 右键打开"
+    echo "  安装方式: 双击 DMG → 拖入 Applications → 右键选「打开」"
+    echo "  首次打开若提示损坏，在终端执行: xattr -cr /Applications/StockRadar.app"
 else
     echo "[错误] 打包失败，请检查日志"
     exit 1
