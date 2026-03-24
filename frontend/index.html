@@ -2217,7 +2217,7 @@ function connectWS() {
     }
   };
   ws.onmessage = e => { try { const d = JSON.parse(e.data);
-    if (d.type==='init') { const incoming=d.alerts||[]; if(incoming.length>0||!alerts.length){ alerts=incoming; for(const a of alerts){if(a.klines&&a.klines.length)klinesMap[a.id]=a.klines;} try{localStorage.setItem('stock-radar-alerts',JSON.stringify(alerts.slice(0,50).map(({klines,...r})=>r)));}catch(e){} try{localStorage.setItem('stock-radar-alerts-ts',Date.now());}catch(e){} } if(d.market)updateMarketLabel(d.market); if(d.sources)updateSourceDots(d.sources); if(d.stocks_all) allStocks=d.stocks_all; renderList(); if(!kvCurrentCode && d.sh_klines && d.sh_klines.length){ kvStockName.textContent='上证指数'; kvStockCode.textContent=''; kvStockChange.textContent=''; kvEmpty.style.display='none'; kvCanvas.style.display='block'; kvLastKlines=d.sh_klines; drawKlineViewer(d.sh_klines); } if(d.kline_loading && d.kline_loading.status==='start'){const dot=document.getElementById('klinesLoadingDot');if(dot){dot.style.display='flex';dot.title=`正在从通达信补充 ${d.kline_loading.total} 只股票的最新K线，请稍候…`;}} }
+    if (d.type==='init') { const incoming=d.alerts||[]; if(incoming.length>0||!alerts.length){ alerts=incoming; for(const a of alerts){if(a.klines&&a.klines.length)klinesMap[a.id]=a.klines;} try{localStorage.setItem('stock-radar-alerts',JSON.stringify(alerts.slice(0,50).map(({klines,...r})=>r)));}catch(e){} try{localStorage.setItem('stock-radar-alerts-ts',Date.now());}catch(e){} } if(d.market)updateMarketLabel(d.market); if(d.sources)updateSourceDots(d.sources); if(d.stocks_all) allStocks=d.stocks_all; renderList(); if(!kvCurrentCode && d.sh_klines && d.sh_klines.length){ kvStockName.textContent='上证指数'; kvStockCode.textContent=''; kvStockChange.textContent=''; kvEmpty.style.display='none'; kvCanvas.style.display='block'; kvLastKlines=d.sh_klines; drawKlineViewer(d.sh_klines); } if(d.kline_loading && d.kline_loading.status==='start'){const dot=document.getElementById('klinesLoadingDot');if(dot){dot.style.display='flex';dot.title=`正在补充 ${d.kline_loading.total} 只股票的最新K线（${d.kline_loading.source||'TDX'}），请稍候…`;}} }
     if (d.type==='init') {
       const appVer = d.app_version || 'v1.8.0';
       const verEl = document.getElementById('appVersion');
@@ -2266,7 +2266,7 @@ function connectWS() {
       if (!dot) return;
       if (d.status === 'start') {
         dot.style.display = 'flex';
-        dot.title = `正在从通达信补充 ${d.total} 只股票的最新K线，请稍候…`;
+        dot.title = `正在补充 ${d.total} 只股票的最新K线（${d.source || 'TDX'}），请稍候…`;
       } else if (d.status === 'done') {
         dot.title = `K线补充完成，更新了 ${d.updated} 只股票`;
         setTimeout(() => { dot.style.display = 'none'; }, 1500);

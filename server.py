@@ -2273,8 +2273,9 @@ async def main():
                 _bg_all_target = [(s['code'], s['name']) for s in _stock_list]
         if not _bg_all_target:
             _bg_all_target = list(ACTIVE_STOCKS)
-        _kline_loading_state.update({'status': 'start', 'total': len(_bg_all_target), 'source': 'TDX'})
-        await broadcast({'type': 'kline_loading', 'status': 'start', 'total': len(_bg_all_target), 'source': 'TDX'})
+        _bg_source = 'akshare/腾讯' if (_tdx_fail_until and time.time() < _tdx_fail_until) else 'TDX'
+        _kline_loading_state.update({'status': 'start', 'total': len(_bg_all_target), 'source': _bg_source})
+        await broadcast({'type': 'kline_loading', 'status': 'start', 'total': len(_bg_all_target), 'source': _bg_source})
         _result = {'updated_count': 0}
 
         def _sync_update():
