@@ -1,5 +1,19 @@
 /* ── StockRadar · 异动雷达前端 v5 — 方案化筛选 ── */
 
+/* ── SVG 图标工具函数 ── */
+function svgIcon(name, size=14) {
+  const s = size, hw = s*2, vb = '0 0 24 24';
+  const base = `width="${s}" height="${s}" viewBox="${vb}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;flex-shrink:0;"`;
+  const icons = {
+    clipboard: `<svg ${base}><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg>`,
+    signal:    `<svg ${base}><path d="M2 10a12 12 0 0120 0"/><path d="M5.5 13.5a8 8 0 0113 0"/><path d="M9 17a4 4 0 016 0"/><circle cx="12" cy="20" r="1" fill="currentColor" stroke="none"/></svg>`,
+    trash:     `<svg ${base}><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>`,
+    chart:     `<svg ${base}><rect x="2" y="12" width="4" height="10" rx="1"/><rect x="9" y="7" width="4" height="15" rx="1"/><rect x="16" y="3" width="4" height="19" rx="1"/></svg>`,
+    save:      `<svg ${base}><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>`,
+  };
+  return icons[name] || '';
+}
+
 const CONCEPT_MAP = {
   '000001':['银行','金融科技'], '600519':['白酒','消费'], '300750':['锂电池','新能源车','储能'],
   '688256':['AI芯片','人工智能'], '002230':['人工智能','AI应用'], '300308':['光模块','CPO','算力'],
@@ -309,7 +323,7 @@ function connectWS() {
         alertList.innerHTML=`<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-title">${d.step==='downloading'?'下载行情数据':'复盘扫描中'}</div><div class="empty-desc" style="font-size:10px;max-width:200px;word-break:break-all;">${esc(d.msg||'')}</div></div>`;
       }
     }
-    if (d.type==='review_init' || d.type==='review_alerts') { reviewAlerts=d.alerts||d.items||[]; for(const a of reviewAlerts){if(a.klines&&a.klines.length)klinesMap[a.id]=a.klines;} if(currentMode==='review') renderList(); const frBtn=document.getElementById('forceReviewBtn'); if(frBtn){frBtn.textContent='📋 立即复盘';frBtn.disabled=false;frBtn.style.opacity='';} }
+    if (d.type==='review_init' || d.type==='review_alerts') { reviewAlerts=d.alerts||d.items||[]; for(const a of reviewAlerts){if(a.klines&&a.klines.length)klinesMap[a.id]=a.klines;} if(currentMode==='review') renderList(); const frBtn=document.getElementById('forceReviewBtn'); if(frBtn){frBtn.innerHTML=`${svgIcon('clipboard')} 立即复盘`;frBtn.disabled=false;frBtn.style.opacity='';} }
     if (d.type==='review_update') { const updates=d.updates||{}; for(const a of reviewAlerts){if(updates[a.code]){a.price=updates[a.code].price;a.change=updates[a.code].change;a.speed=updates[a.code].speed||0;a.amount=updates[a.code].amount||a.amount;}} if(currentMode==='review') renderList(); }
     if (d.type==='market') updateMarketLabel(d.state);
     if (d.type==='sentiment') { sentimentData = d.data; renderSentimentFromData(d.data); }
@@ -384,9 +398,11 @@ function renderAlert(a, isNew, enabledNames) {
   if (a.big_order_count && a.big_order_count > 0) {
     bigOrderHtml = `<span class="big-order-count">大单×${a.big_order_count}</span>`;
   }
+  const typeLabel = { 'limit-up':'涨停', 'limit-down':'跌停', 'rocket':'强势', 'dive':'大跌', 'volume':'异动' }[a.type] || '';
+  const tagHtml = typeLabel ? `<span class="alert-tag ${a.type}">${typeLabel}</span>` : '';
   return `<div class="alert-card${nc}" data-id="${a.id}"><div class="alert-info">
   <div class="alert-top"><span class="stock-name">${esc(a.name)}</span><span class="stock-code">${a.code}</span>${cHtml}<span class="alert-time">${a.time}</span></div>
-  <div class="alert-middle">${mHtml}${bigOrderHtml}<span class="change ${cc}">${sign}${a.change}%</span><span class="alert-meta">速${a.speed}%/m · ${a.amount}亿</span></div>
+  <div class="alert-middle">${tagHtml}${mHtml}${bigOrderHtml}<span class="change ${cc}">${sign}${a.change}%</span><span class="alert-meta">速${a.speed}%/m · ${a.amount}亿</span></div>
 </div><div class="alert-chart"><canvas data-alert-id="${a.id}" data-price="${a.price}" data-change="${a.change}"></canvas></div></div>`;
 }
 
@@ -401,8 +417,8 @@ function renderList(newIds) {
   });
   if (!filtered.length) {
     const emptyMsg = currentMode === 'review'
-      ? { icon:'📋', title:'暂无复盘数据', desc:'收盘后自动扫描符合方案的个股' }
-      : { icon:'📡', title: wsConnected?'暂无异动':'等待连接', desc: wsConnected?'等待符合方案的个股…':'python engine/server.py' };
+      ? { icon: svgIcon('clipboard', 28), title:'暂无复盘数据', desc:'收盘后自动扫描符合方案的个股' }
+      : { icon: svgIcon('signal', 28), title: wsConnected?'暂无异动':'等待连接', desc: wsConnected?'等待符合方案的个股…':'python engine/server.py' };
     alertList.innerHTML = `<div class="empty-state"><div class="empty-icon">${emptyMsg.icon}</div><div class="empty-title">${emptyMsg.title}</div><div class="empty-desc">${emptyMsg.desc}</div></div>`;
     return;
   }
@@ -456,7 +472,7 @@ function renderSchemeBar() {
     const style = isOpen
       ? 'opacity:0.4;cursor:not-allowed;'
       : 'background:rgba(99,102,241,0.15);border-color:var(--accent);color:var(--accent);cursor:pointer;';
-    html += `<button id="forceReviewBtn" class="scheme-pill" style="margin-left:auto;flex-shrink:0;${style}" ${disabled}>📋 立即复盘</button>`;
+    html += `<button id="forceReviewBtn" class="scheme-pill" style="margin-left:auto;flex-shrink:0;display:flex;align-items:center;gap:4px;${style}" ${disabled}>${svgIcon('clipboard')} 立即复盘</button>`;
   }
 
   schemeBar.innerHTML = html;
@@ -474,7 +490,7 @@ function renderSchemeBar() {
           btn.style.opacity = '0.5';
           // 3分钟后恢复（防止卡住）
           setTimeout(() => {
-            btn.textContent = '📋 立即复盘';
+            btn.innerHTML = `${svgIcon('clipboard')} 立即复盘`;
             btn.disabled = false;
             btn.style.opacity = '';
           }, 180000);
@@ -497,8 +513,8 @@ function renderSettings() {
   for (const s of schemes) {
     html += `<div class="scheme-card" data-id="${s.id}"><div class="scheme-card-head">`;
     html += `<input class="scheme-name-input" value="${esc(s.name)}" data-id="${s.id}" />`;
-    html += `<div style="display:flex;gap:4px;"><button class="scheme-save-btn" data-id="${s.id}" style="background:rgba(34,197,94,0.1);border:1px solid #22c55e;color:#22c55e;font-size:11px;padding:2px 8px;border-radius:5px;cursor:pointer;font-weight:600;">💾 保存</button>`;
-    html += `<button class="scheme-delete-btn" data-id="${s.id}">🗑</button></div></div>`;
+    html += `<div style="display:flex;gap:4px;"><button class="scheme-save-btn" data-id="${s.id}" style="background:rgba(34,197,94,0.1);border:1px solid #22c55e;color:#22c55e;font-size:11px;padding:2px 8px;border-radius:5px;cursor:pointer;font-weight:600;display:flex;align-items:center;gap:3px;">${svgIcon('save', 12)} 保存</button>`;
+    html += `<button class="scheme-delete-btn" data-id="${s.id}">${svgIcon('trash', 13)}</button></div></div>`;
     for (const def of CONDITION_DEFS) {
       const cond = s.conditions[def.key] || {};
       const checked = cond.enabled ? 'checked' : '';
@@ -608,7 +624,7 @@ function renderSettings() {
     html += `</div>`;
   }
   let tplOpts = SCHEME_TEMPLATES.map(t => `<option value="${t.id}">${t.name} — ${t.desc}</option>`).join('');
-  html += `</div><div style="display:flex;gap:6px;padding:4px 8px 10px;"><select id="templateSelect" class="template-select"><option value="">📋 从模板创建…</option>${tplOpts}</select><button class="add-scheme-btn" id="addSchemeBtn" style="flex:1;margin:0;">＋ 新建空白方案</button></div>`;
+  html += `</div><div style="display:flex;gap:6px;padding:4px 8px 10px;"><select id="templateSelect" class="template-select"><option value="">从模板创建…</option>${tplOpts}</select><button class="add-scheme-btn" id="addSchemeBtn" style="flex:1;margin:0;">＋ 新建空白方案</button></div>`;
   settingsPanel.innerHTML = html;
   bindSettingsEvents();
 }
@@ -621,7 +637,7 @@ function renderSettings() {
 function renderSentimentPanel() {
   sentimentPanel.innerHTML = `
     <div class="sent-section">
-      <div class="sent-section-title">📈 沪深指数</div>
+      <div class="sent-section-title">沪深指数</div>
       <div id="sent-index">
         <div style="color:var(--muted);font-size:11px;">加载中…</div>
       </div>
@@ -990,7 +1006,7 @@ function bindSettingsEvents() {
       saveSchemes();
       btn.textContent = '✅ 已保存';
       btn.style.background = 'rgba(34,197,94,0.2)';
-      setTimeout(() => { btn.textContent = '💾 保存'; btn.style.background = 'rgba(34,197,94,0.1)'; }, 1200);
+      setTimeout(() => { btn.innerHTML = `${svgIcon('save', 12)} 保存`; btn.style.background = 'rgba(34,197,94,0.1)'; }, 1200);
     });
   });
   settingsPanel.querySelectorAll('.scheme-name-input').forEach(inp => {

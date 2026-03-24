@@ -66,6 +66,36 @@ def fetch_klines_ashare(code: str, days: int = 150) -> list:
         return []
 
 
+def df_to_kline_list_with_time(df) -> list:
+    """将分钟K线 DataFrame 转换为带完整时间戳的 kline list"""
+    result = []
+    for ts, row in df.iterrows():
+        result.append({
+            'date':   ts.strftime('%Y-%m-%d %H:%M'),
+            'open':   round(float(row['open']),  2),
+            'close':  round(float(row['close']), 2),
+            'high':   round(float(row['high']),  2),
+            'low':    round(float(row['low']),   2),
+            'volume': float(row['volume']),
+            'amount': 0.0,
+        })
+    return result
+
+
+def fetch_klines_60min_ashare(code: str, count: int = 100) -> list:
+    """用 Ashare 获取单只股票60分钟K线（新浪→腾讯降级），失败返回空列表"""
+    if not _ASHARE_AVAILABLE:
+        return []
+    try:
+        df = get_price(to_ashare_code(code), count=count, frequency='60m')
+        if df is None or df.empty:
+            return []
+        return df_to_kline_list_with_time(df)
+    except Exception as e:
+        print(f"[Ashare] {code} 60min获取失败: {e}")
+        return []
+
+
 def fetch_index_klines_ashare(symbol: str, days: int = 60) -> list:
     """获取指数K线，symbol 为 Ashare 格式如 sh000001（上证指数）。
     Ashare 不可用时直接调新浪财经 API 回退。"""

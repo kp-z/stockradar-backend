@@ -87,7 +87,7 @@ def set_sync_enabled(enabled):
 def _api(method, path, data=None, params=None):
     """统一 REST API 调用。"""
     url = f"{_rest_url}/{path}"
-    r = requests.request(method, url, headers=_headers, json=data, params=params, timeout=15)
+    r = requests.request(method, url, headers=_headers, json=data, params=params, timeout=8)
     r.raise_for_status()
     if r.text:
         return r.json()
@@ -436,3 +436,158 @@ def cloud_get_all_users_admin():
         logger.warning(f"云端获取用户列表失败: {e}")
         return []
     return merged
+
+
+# ── 策略模板操作（管理员发布，所有用户可读取）──
+
+def cloud_get_templates():
+    """获取全部策略模板（所有登录用户可调用）。"""
+    if not is_available():
+        return []
+    try:
+        return _api("GET", "scheme_templates", params={
+            "select": "id,name,author,description,conditions_json,created_at",
+            "order": "created_at.desc",
+        }) or []
+    except Exception as e:
+        logger.warning(f"云端获取策略模板失败: {e}")
+        return []
+
+
+def cloud_save_template(template: dict):
+    """新增策略模板（管理员调用）。"""
+    if not is_available():
+        return None
+    try:
+        return _api("POST", "scheme_templates", data=template)
+    except Exception as e:
+        logger.warning(f"云端保存策略模板失败: {e}")
+        return None
+
+
+def cloud_update_template(template_id: str, template: dict):
+    """更新策略模板（管理员调用）。"""
+    if not is_available():
+        return None
+    try:
+        return _api("PATCH", "scheme_templates", data=template, params={"id": f"eq.{template_id}"})
+    except Exception as e:
+        logger.warning(f"云端更新策略模板失败: {e}")
+        return None
+
+
+def cloud_delete_template(template_id: str):
+    """删除策略模板（管理员调用）。"""
+    if not is_available():
+        return False
+    try:
+        _api("DELETE", "scheme_templates", params={"id": f"eq.{template_id}"})
+        return True
+    except Exception as e:
+        logger.warning(f"云端删除策略模板失败: {e}")
+        return False
+
+
+# ── 全市场每日快照操作 ──
+
+def cloud_get_snapshot_date():
+    """获取 Supabase 中最新的快照日期，返回字符串或 None。"""
+    if not is_available():
+        return None
+    try:
+        result = _api("GET", "snapshot_metadata", params={
+            "select": "value",
+            "key": "eq.last_update_date",
+        })
+        if result:
+            return result[0]["value"]
+        return None
+    except Exception as e:
+        logger.warning(f"获取快照日期失败: {e}")
+        return None
+
+
+def cloud_get_latest_snapshots():
+    """从 Supabase 获取最新日期的全部快照行，返回 list[dict]。自动分页处理超过1000行的情况。"""
+    if not is_available():
+        return []
+    try:
+        latest_date = cloud_get_snapshot_date()
+        if not latest_date:
+            return []
+        all_rows = []
+        page_size = 1000
+        offset = 0
+        while True:
+            batch = _api("GET", "daily_snapshots", params={
+                "select": "*",
+                "date": f"eq.{latest_date}",
+                "limit": str(page_size),
+                "offset": str(offset),
+                "order": "code",
+            })
+            if not batch:
+                break
+            all_rows.extend(batch)
+            if len(batch) < page_size:
+                break
+            offset += page_size
+        return all_rows
+    except Exception as e:
+        logger.warning(f"获取云端快照失败: {e}")
+        return []
+
+
+def cloud_upsert_snapshots(rows, batch_size=500):
+    """分批 upsert 快照到 Supabase daily_snapshots 表。返回成功写入的总数。"""
+    if not is_available() or not rows:
+        return 0
+    total = 0
+    headers = {**_headers, "Prefer": "resolution=merge-duplicates,return=minimal"}
+    for i in range(0, len(rows), batch_size):
+        batch = rows[i:i + batch_size]
+        try:
+            requests.post(
+                f"{_rest_url}/daily_snapshots",
+                headers=headers,
+                json=batch,
+                timeout=30,
+            ).raise_for_status()
+            total += len(batch)
+        except Exception as e:
+            logger.warning(f"快照批次写入失败 (offset={i}): {e}")
+    if total:
+        logger.info(f"云端快照写入完成: {total}/{len(rows)} 行")
+    return total
+
+
+def cloud_set_snapshot_date(date_str):
+    """更新 Supabase 中的快照日期元数据。"""
+    if not is_available():
+        return
+    try:
+        headers = {**_headers, "Prefer": "resolution=merge-duplicates,return=minimal"}
+        requests.post(f"{_rest_url}/snapshot_metadata", headers=headers, json={
+            "key": "last_update_date",
+            "value": date_str,
+            "updated_at": datetime.now().isoformat(),
+        }, timeout=15).raise_for_status()
+    except Exception as e:
+        logger.warning(f"更新快照日期失败: {e}")
+
+
+def cloud_purge_old_snapshots(keep_days=7):
+    """删除 Supabase 中超过 keep_days 天的旧快照。"""
+    if not is_available():
+        return
+    try:
+        cutoff = (datetime.now() - timedelta(days=keep_days)).strftime('%Y-%m-%d')
+        requests.delete(
+            f"{_rest_url}/daily_snapshots",
+            headers=_headers,
+            params={"date": f"lt.{cutoff}"},
+            timeout=30,
+        ).raise_for_status()
+        logger.info(f"已清理 {cutoff} 之前的旧快照")
+    except Exception as e:
+        logger.warning(f"清理旧快照失败: {e}")

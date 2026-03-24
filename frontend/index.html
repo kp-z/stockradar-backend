@@ -219,18 +219,6 @@
     }
     .cond-del-rule-btn:hover { opacity: 0.7; }
 
-    /* ── 删除方案按钮（卡片底部） ── */
-    .scheme-delete-bottom {
-      display: flex; justify-content: center; padding: 8px 0 2px;
-      border-top: 1px solid var(--border); margin-top: 8px;
-    }
-    .scheme-delete-bottom button {
-      background: none; border: 1px solid rgba(239,68,68,0.2); color: var(--muted);
-      font-size: 11px; padding: 4px 16px; border-radius: 6px; cursor: pointer;
-      transition: all 0.15s;
-    }
-    .scheme-delete-bottom button:hover { color: var(--red); border-color: var(--red); background: rgba(239,68,68,0.08); }
-
     .add-scheme-btn {
       flex: 1; padding: 8px;
       background: rgba(99,102,241,0.1); border: 1px dashed var(--accent);
@@ -347,7 +335,7 @@
       background: var(--bg);
       border-left: 1px solid var(--border);
       display: flex; flex-direction: column;
-      overflow-y: auto;
+      overflow: hidden;
     }
     .right-panel::-webkit-scrollbar { width: 3px; }
     .right-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
@@ -355,11 +343,10 @@
     /* K线观察框（右侧上半） */
     .kline-viewer {
       width: 100%;
-      min-height: 320px;
-      height: 45vh;
+      min-height: 260px;
+      flex: 1 1 0;
       background: var(--bg);
       display: flex; flex-direction: column;
-      flex-shrink: 0;
     }
     .kline-viewer-header {
       padding: 6px 12px;
@@ -388,30 +375,45 @@
     }
     .kline-viewer-controls button:hover { background: rgba(255,255,255,0.15); }
     .kline-viewer-controls .kv-days {
-      font-size: 11px; color: var(--muted); min-width: 40px; text-align: center;
+      font-size: 11px; color: var(--muted); min-width: 24px; text-align: center;
     }
+    .kv-period-tabs { display: flex; gap: 2px; }
+    .kv-period-btn {
+      padding: 1px 7px; border-radius: 999px; font-size: 10px; font-weight: 600;
+      border: 1px solid var(--border); background: transparent; color: var(--muted);
+      cursor: pointer; transition: all 0.15s;
+    }
+    .kv-period-btn:hover { border-color: rgba(255,255,255,0.15); color: var(--text); }
+    .kv-period-btn.active { background: var(--accent); border-color: var(--accent); color: white; }
     .kline-viewer-body {
-      flex: 1; position: relative; overflow: hidden;
+      flex: 1; position: relative; overflow: visible;
       min-height: 200px; display: flex; flex-direction: column;
     }
-    .kline-viewer-overlays {
-      display: flex; align-items: center; gap: 4px;
-      padding: 2px 8px; border-bottom: 1px solid var(--border);
-      font-size: 10px; flex-shrink: 0;
+    .kv-tag-btn {
+      padding: 2px 7px; border-radius: 4px; font-size: 10px;
+      border: 1px solid var(--border); background: rgba(0,0,0,0.45);
+      color: var(--muted); cursor: pointer; transition: all 0.15s;
+      backdrop-filter: blur(4px);
     }
-    .kv-overlay-btn {
-      padding: 1px 6px; border-radius: 3px; font-size: 9px; font-weight: 700;
-      border: 1px solid var(--border); background: transparent; color: var(--muted);
-      cursor: pointer; transition: all 0.15s; letter-spacing: 0.3px;
+    .kv-tag-btn:hover { border-color: rgba(255,255,255,0.2); color: var(--text); }
+    .kv-tag-btn.active { background: rgba(99,102,241,0.2); border-color: var(--accent); color: var(--text); }
+    .kv-tag-settings { font-size: 11px; padding: 2px 5px; }
+    .kv-settings-popup {
+      display: none; position: absolute; top: calc(100% + 6px); right: 0;
+      background: var(--surface, #1e1e2e); border: 1px solid var(--border);
+      border-radius: 6px; padding: 8px 10px; min-width: 130px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.5); z-index: 20;
+      flex-direction: column; gap: 6px; font-size: 10px;
     }
-    .kv-overlay-btn.active { background: rgba(99,102,241,0.15); border-color: var(--accent); color: var(--text); }
-    .kv-overlay-input {
-      width: 42px; background: rgba(255,255,255,0.06); border: 1px solid var(--border);
-      color: var(--text); font-size: 9px; padding: 1px 3px; border-radius: 3px;
-      outline: none; text-align: center;
+    .kv-settings-popup.open { display: flex; }
+    .kv-settings-popup label { display: flex; justify-content: space-between; align-items: center; color: var(--muted); gap: 8px; }
+    .kv-settings-popup select {
+      background: rgba(255,255,255,0.06); border: 1px solid var(--border);
+      color: var(--text); font-size: 9px; padding: 1px 3px;
+      border-radius: 3px; outline: none;
     }
     .kline-viewer-body canvas {
-      flex: 1; width: 100%; display: block;
+      flex: 1; width: 100%; display: block; cursor: crosshair;
     }
     .kline-viewer-empty {
       position: absolute; top: 0; left: 0; right: 0; bottom: 0;
@@ -424,6 +426,9 @@
       padding: 6px 8px;
       display: flex; flex-direction: column; gap: 6px;
       border-top: 1px solid var(--border);
+      flex-shrink: 0;
+      max-height: 40%;
+      overflow-y: auto;
     }
 
     /* alert-card 点击高亮 */
@@ -471,7 +476,9 @@
     .config-modal {
       display: none; position: absolute;
       bottom: 40px; right: 8px;
-      width: 270px;
+      width: min(460px, calc(100vw - 20px));
+      max-height: calc(100vh - 60px);
+      overflow-y: auto; overflow-x: hidden;
       background: rgb(30, 34, 44); border: 1px solid var(--border);
       border-radius: 12px; padding: 14px 16px;
       z-index: 200; box-shadow: 0 8px 32px rgba(0,0,0,0.55);
@@ -508,6 +515,50 @@
       border-radius: 7px; cursor: pointer;
     }
     .config-save-btn:hover { background: rgba(99,102,241,0.28); }
+
+    /* 配置弹窗 Tab 栏 */
+    .config-tab-bar { display:flex; gap:4px; margin-bottom:10px; }
+    .config-tab {
+      flex:1; padding:4px 0; border-radius:6px; border:1px solid var(--border);
+      background:transparent; color:var(--muted); font-size:10px; font-weight:600;
+      cursor:pointer; transition:all 0.15s;
+    }
+    .config-tab.active {
+      background:rgba(99,102,241,0.15); border-color:var(--accent, #6366f1); color:var(--text);
+    }
+    /* 监控面板 */
+    .monitor-table { width:100%; border-collapse:collapse; font-size:10px; }
+    .monitor-table th { text-align:left; color:var(--muted); font-size:9px; font-weight:600; padding:3px 4px; border-bottom:1px solid var(--border); }
+    .monitor-table td { padding:3px 4px; color:var(--text); border-bottom:1px solid rgba(255,255,255,0.04); white-space:nowrap; }
+    .monitor-table .dot { display:inline-block; width:5px; height:5px; border-radius:50%; margin-right:3px; vertical-align:middle; }
+    .monitor-table .dot-ok { background:#22c55e; }
+    .monitor-table .dot-err { background:#ef4444; }
+    .monitor-table .dot-na { background:#555; }
+    .monitor-table .src { color:var(--muted); }
+    .monitor-table .detail { color:var(--accent, #6366f1); }
+    .monitor-table .ago { color:var(--muted); text-align:right; }
+
+    /* ── 数据监控面板 v2（双表格）── */
+    .mtr2 { width:100%; border-collapse:collapse; font-size:10px; margin-bottom:8px; table-layout:fixed; }
+    .mtr2 th { color:var(--muted); font-size:9px; font-weight:600; padding:2px 4px; border-bottom:1px solid var(--border); text-align:left; }
+    .mtr2 td { padding:3px 4px; border-bottom:1px solid rgba(255,255,255,0.04); vertical-align:middle; text-align:left; word-break:break-word; }
+    .mtr2 .c-name { color:var(--text); white-space:nowrap; font-size:10px; }
+    .mtr2 .c-name small { display:block; font-size:8px; color:var(--muted); margin-top:1px; }
+    .mtr2 .c-chain { color:var(--muted); font-size:9px; word-break:break-all; }
+    .mtr2 .c-now  { font-size:9px; white-space:nowrap; }
+    .mtr2 .c-det  { color:var(--accent); font-size:9px; max-width:70px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .mtr2 .c-ago  { color:var(--muted); font-size:9px; text-align:left; white-space:nowrap; }
+    .mtr2 .c-cnt  { color:var(--muted); font-size:9px; text-align:left; }
+    .mtr2 .c-uses { color:var(--muted); font-size:9px; word-break:break-word; }
+    .mtr2 .dot { display:inline-block; width:5px; height:5px; border-radius:50%; margin-right:3px; vertical-align:middle; flex-shrink:0; }
+    .mtr2 .ok  { background:#22c55e; } .mtr2 .fb  { background:#f59e0b; }
+    .mtr2 .err { background:#ef4444; } .mtr2 .na  { background:#444; }
+    .mtr2 .badge { font-size:8px; border-radius:3px; padding:0 3px; margin-left:2px; line-height:14px; }
+    .mtr2 .badge-fb { background:rgba(245,158,11,0.15); color:#f59e0b; }
+    .mtr-section { font-size:9px; font-weight:600; color:var(--muted); margin:8px 0 3px; display:flex; align-items:center; gap:4px; }
+    .mtr-section:first-child { margin-top:2px; }
+    .mtr-footer { display:flex; justify-content:space-between; font-size:9px; color:var(--muted); margin-top:6px; padding-top:4px; border-top:1px solid var(--border); }
+    .mtr-footer2 { display:flex; justify-content:space-between; font-size:9px; color:var(--muted); margin-top:3px; }
 
     .app {
       display: grid;
@@ -721,6 +772,8 @@
         <span class="logo">📡</span>
         <span class="title">异动雷达</span>
         <span class="market-status closed" id="marketStatus">未连接</span>
+        <span id="headerClock" style="font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums;"></span>
+        <span id="headerCountdown" style="font-size:10px;color:var(--orange);font-variant-numeric:tabular-nums;"></span>
       </div>
       <div class="header-actions">
         <span id="authUserLabel" style="font-size:10px;color:var(--accent);display:none;align-self:center;cursor:pointer;" title="点击管理"></span>
@@ -744,7 +797,7 @@
     <div class="search-results" id="searchResults" style="display:none;"></div>
     <div class="list" id="alertList">
       <div class="empty-state">
-        <div class="empty-icon">📡</div>
+        <div class="empty-icon"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.4"><path d="M2 10a12 12 0 0120 0"/><path d="M5.5 13.5a8 8 0 0113 0"/><path d="M9 17a4 4 0 016 0"/><circle cx="12" cy="20" r="1" fill="currentColor" stroke="none"/></svg></div>
         <div class="empty-title">等待市场数据</div>
         <div class="empty-desc">连接引擎后将实时推送异动</div>
       </div>
@@ -761,22 +814,29 @@
           <span class="kv-stock-change" id="kvStockChange"></span>
         </div>
         <div class="kline-viewer-controls">
-          <button id="kvZoomOut" title="缩小（减少天数）↑">−</button>
-          <span class="kv-days" id="kvDaysLabel">60日</span>
-          <button id="kvZoomIn" title="放大（增加天数）↓">+</button>
+          <div class="kv-period-tabs">
+            <button class="kv-period-btn" data-period="60min">时K</button>
+            <button class="kv-period-btn active" data-period="daily">日K</button>
+            <button class="kv-period-btn" data-period="weekly">周K</button>
+            <button class="kv-period-btn" data-period="monthly">月K</button>
+          </div>
+          <button id="kvZoomOut" title="缩小（减少根数）">−</button>
+          <span class="kv-days" id="kvDaysLabel">60</span>
+          <button id="kvZoomIn" title="放大（增加根数）">+</button>
+          <span style="color:var(--border);margin:0 1px;">|</span>
+          <button class="kv-tag-btn" id="kvBtnBoll">布林</button>
+          <button class="kv-tag-btn" id="kvBtnRetrace">回撤</button>
+          <div style="position:relative;">
+            <button class="kv-tag-btn kv-tag-settings" id="kvBtnSettings">⚙</button>
+            <div class="kv-settings-popup" id="kvSettingsPopup">
+              <label>布林周期<select id="kvBollPeriod"><option value="5">5</option><option value="10">10</option><option value="20" selected>20</option><option value="30">30</option><option value="60">60</option></select></label>
+              <label>回撤比例<select id="kvRetraceRatio"><option value="0.236">23.6%</option><option value="0.382" selected>38.2%</option><option value="0.5">50.0%</option><option value="0.618">61.8%</option></select></label>
+            </div>
+          </div>
         </div>
       </div>
       <div class="kline-viewer-body" id="kvBody">
-        <div class="kline-viewer-overlays">
-          <button class="kv-overlay-btn" id="kvToggleBoll" title="布林线">BOLL</button>
-          <select class="kv-overlay-input" id="kvBollPeriod" title="布林周期"><option value="5">5日</option><option value="10">10日</option><option value="20" selected>20日</option><option value="30">30日</option><option value="60">60日</option></select>
-          <span style="color:var(--border);margin:0 2px;">|</span>
-          <button class="kv-overlay-btn" id="kvToggleRetrace" title="回撤线">回撤</button>
-          <input class="kv-overlay-input" id="kvRetraceDays" type="number" value="20" min="2" max="120" title="天数" />
-          <span style="font-size:9px;color:var(--muted);">天</span>
-          <input class="kv-overlay-input" id="kvRetraceRatio" type="number" value="0.382" step="0.001" min="0" max="1" title="系数" style="width:52px;" />
-        </div>
-        <div class="kline-viewer-empty" id="kvEmpty">📊 点击左侧异动股票查看日K线</div>
+        <div class="kline-viewer-empty" id="kvEmpty"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;"><rect x="2" y="12" width="4" height="10" rx="1"/><rect x="9" y="7" width="4" height="15" rx="1"/><rect x="16" y="3" width="4" height="19" rx="1"/></svg>点击左侧异动股票查看日K线</div>
         <canvas id="kvCanvas" style="display:none;"></canvas>
       </div>
     </div>
@@ -784,7 +844,7 @@
       <div style="display:flex;justify-content:flex-end;padding:2px 0 4px;">
         <button class="header-btn" id="sentimentRefreshBtn" title="刷新情绪数据" style="width:22px;height:22px;font-size:11px;">↻</button>
       </div>
-      <div style="color:var(--muted);font-size:11px;text-align:center;padding:8px;">📊 情绪数据加载中…</div>
+      <div style="color:var(--muted);font-size:11px;text-align:center;padding:8px;display:flex;align-items:center;justify-content:center;gap:4px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="12" width="4" height="10" rx="1"/><rect x="9" y="7" width="4" height="15" rx="1"/><rect x="16" y="3" width="4" height="19" rx="1"/></svg>情绪数据加载中…</div>
     </div>
     </div><!-- /right-panel -->
     <div class="settings-panel" id="settingsPanel"></div>
@@ -811,16 +871,21 @@
     <div class="admin-panel" id="adminPanel" style="display:none;">
       <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border);">
         <span style="font-size:13px;font-weight:700;color:var(--text);">管理后台</span>
-        <button id="adminCloseBtn" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;">✕</button>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <button id="adminRefreshBtn" style="background:rgba(255,255,255,0.08);border:none;color:var(--muted);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:14px;" title="刷新数据">↻</button>
+          <button id="adminCloseBtn" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;">✕</button>
+        </div>
       </div>
       <div style="padding:6px 16px 0;">
         <div class="chart-mode-toggle" id="adminTabs">
           <button class="chart-mode-btn active" data-tab="users">用户数据</button>
           <button class="chart-mode-btn" data-tab="sectors">板块配置</button>
+          <button class="chart-mode-btn" data-tab="templates">策略模板</button>
         </div>
       </div>
       <div id="adminTabUsers" style="padding:12px 16px;overflow-y:auto;flex:1;font-size:11px;"></div>
       <div id="adminTabSectors" style="display:none;padding:12px 16px;overflow-y:auto;flex:1;font-size:11px;"></div>
+      <div id="adminTabTemplates" style="display:none;padding:12px 16px;overflow-y:auto;flex:1;font-size:11px;"></div>
     </div>
     <div class="footer">
       <div class="footer-left">
@@ -843,6 +908,10 @@
             <div class="source-dot-circle" id="srcAshare"></div>
             <span class="source-dot-label">Ashare</span>
           </div>
+          <div class="source-dot" title="akshare (东财/新浪)">
+            <div class="source-dot-circle" id="srcAkshare"></div>
+            <span class="source-dot-label">akshare</span>
+          </div>
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:6px;">
@@ -852,6 +921,12 @@
     </div>
     <div class="config-modal" id="configModal">
       <div class="config-modal-title">项目设置</div>
+      <div class="config-tab-bar" id="configTabBar">
+        <button class="config-tab active" data-tab="settings">设置</button>
+        <button class="config-tab" data-tab="monitor">数据监控</button>
+      </div>
+      <!-- 设置 Tab -->
+      <div id="cfgTabSettings">
       <div class="config-section">
         <div class="config-label">题材数据来源</div>
         <div class="config-radio-group">
@@ -893,12 +968,29 @@
         </label>
       </div>
       <button class="config-save-btn" id="configSaveBtn">保存并同步</button>
+      </div>
+      <!-- 数据监控 Tab -->
+      <div id="cfgTabMonitor" style="display:none;">
+        <div id="monitorContent" style="font-size:11px;color:var(--muted);text-align:center;padding:16px 0;">加载中...</div>
+      </div>
     </div>
   </div>
 
   <script>
 /* ── StockRadar · 异动雷达前端 v5 — 方案化筛选 ── */
 
+function svgIcon(name, size=14) {
+  const s = size, vb = '0 0 24 24';
+  const base = `width="${s}" height="${s}" viewBox="${vb}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;flex-shrink:0;"`;
+  const icons = {
+    clipboard: `<svg ${base}><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg>`,
+    signal:    `<svg ${base}><path d="M2 10a12 12 0 0120 0"/><path d="M5.5 13.5a8 8 0 0113 0"/><path d="M9 17a4 4 0 016 0"/><circle cx="12" cy="20" r="1" fill="currentColor" stroke="none"/></svg>`,
+    trash:     `<svg ${base}><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>`,
+    chart:     `<svg ${base}><rect x="2" y="12" width="4" height="10" rx="1"/><rect x="9" y="7" width="4" height="15" rx="1"/><rect x="16" y="3" width="4" height="19" rx="1"/></svg>`,
+    save:      `<svg ${base}><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>`,
+  };
+  return icons[name] || '';
+}
 const CONCEPT_MAP = {
   '000001':['银行','金融科技'], '600519':['白酒','消费'], '300750':['锂电池','新能源车','储能'],
   '688256':['AI芯片','人工智能'], '002230':['人工智能','AI应用'], '300308':['光模块','CPO','算力'],
@@ -930,7 +1022,7 @@ const DEFAULT_SCHEMES = [{
     shortRise:      { enabled: false, seconds: 60, percent: 3 },
     breakMinMA:     { enabled: false, minutes: 5 },
     breakDayMA:     { enabled: false, period: 5 },
-    breakGolden:    { enabled: false, days: 20, ratio: 0.382 },
+    breakGolden:    { enabled: false, days: 20, ratio: 0.382, mode: 'cross' },
     amountMultiple: { enabled: false, multiple: 2 },
     volumeRatio:    { enabled: false, min: 2 },
     bollingerUp:    { enabled: false, rules: [{ band: 'upper', period: '20d' }] },
@@ -1015,7 +1107,7 @@ let schemes = JSON.parse(localStorage.getItem('stock-radar-schemes')) || JSON.pa
 /* ── 项目配置 ── */
 const DEFAULT_APP_CONFIG = { sectorSource: 'kaipanla', kaipanlaUserId: '0', kaipanlaToken: '0', ashareEnabled: true, ashareAsPrimary: false };
 let appConfig = { ...DEFAULT_APP_CONFIG, ...JSON.parse(localStorage.getItem('stock-radar-config') || '{}') };
-let alerts = [];
+let alerts = JSON.parse(localStorage.getItem('stock-radar-alerts') || '[]');
 let isPinned = true;
 let ws = null;
 let wsConnected = false;
@@ -1025,18 +1117,24 @@ let activeSchemeTab = null;
 let currentMode = 'stock'; // unified mode
 const klinesMap = {};
 let kvLastKlines = null;
+const kvKlinesCache = {}; // { "600000_daily": [...], "600000_weekly": [...] }
 let kvOverlayBollinger = false, kvOverlayBollingerPeriod = 20;
-let kvOverlayRetracement = false, kvOverlayRetraceDays = 20, kvOverlayRetraceRatio = 0.382;
+let kvOverlayRetracement = false, kvOverlayRetraceRatio = 0.382;
 let watchlist = JSON.parse(localStorage.getItem('stock-radar-watchlist') || '[]');
 let watchlistResults = [];
+let _schemeScreened = false; // 是否已收到过 screen_results（用于区分"选股中"和"暂无命中"）
+let _screenDataDate = '';    // 上次选股结果的数据截止日期
+let _screenIsRealtime = true; // 上次选股是否为盘中实时数据
 let allStocks = []; // 全部股票列表，从 init 消息获取
-let authUser = null;
 let authToken = localStorage.getItem('stock-radar-auth-token') || null;
+let authUser = (() => { try { const v = localStorage.getItem('stock-radar-auth-user'); return v && v !== 'undefined' ? JSON.parse(v) : null; } catch(e) { return null; } })();
 let cloudSyncEnabled = JSON.parse(localStorage.getItem('stock-radar-sync-enabled') ?? 'true');
 
 /* ── DOM ── */
 const alertList     = document.getElementById('alertList');
 const marketStatus  = document.getElementById('marketStatus');
+const headerClock   = document.getElementById('headerClock');
+const headerCountdown = document.getElementById('headerCountdown');
 const refreshStatus = document.getElementById('refreshStatus');
 const refreshDot    = document.getElementById('refreshDot');
 const settingsPanel = document.getElementById('settingsPanel');
@@ -1093,13 +1191,45 @@ function updateSourceDots(sources) {
   if ('eastmoney' in sources) setDot(srcEastmoney, sources.eastmoney);
   if ('kaipanla' in sources) setDot(srcKaipanla, sources.kaipanla);
   if ('ashare' in sources) setDot(srcAshare, sources.ashare);
+  if ('akshare' in sources) setDot(srcAkshare, sources.akshare);
 }
 
 /* ── 工具函数 ── */
 const MARKET_LABELS = { open:'交易中', closed:'已收盘', lunch:'午休', pre:'未开盘', call:'集合竞价' };
+let _currentMarketState = 'closed';
 function updateMarketLabel(s) {
+  _currentMarketState = s;
   marketStatus.textContent = MARKET_LABELS[s]||'未知';
   marketStatus.className = `market-status ${s==='open'||s==='call'?'open':s==='lunch'?'lunch':'closed'}`;
+}
+function _updateHeaderClock() {
+  const now = new Date();
+  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+  const bj = new Date(utc + 8 * 3600000);
+  const hh = String(bj.getHours()).padStart(2,'0');
+  const mm = String(bj.getMinutes()).padStart(2,'0');
+  const ss = String(bj.getSeconds()).padStart(2,'0');
+  headerClock.textContent = `${hh}:${mm}:${ss}`;
+  const state = _currentMarketState;
+  const bjSec = bj.getHours()*3600 + bj.getMinutes()*60 + bj.getSeconds();
+  let target = null, label = '';
+  if (state === 'open' || state === 'call') {
+    if (bjSec < 11*3600+30*60) { target = 11*3600+30*60; label = '距午休'; }
+    else { target = 15*3600; label = '距收盘'; }
+  } else if (state === 'lunch') {
+    target = 13*3600; label = '距开盘';
+  } else if (state === 'pre') {
+    target = 9*3600+30*60; label = '距开盘';
+  }
+  if (target && target > bjSec) {
+    const diff = target - bjSec;
+    const dh = String(Math.floor(diff/3600)).padStart(2,'0');
+    const dm = String(Math.floor((diff%3600)/60)).padStart(2,'0');
+    const ds = String(diff%60).padStart(2,'0');
+    headerCountdown.textContent = `${label} ${dh}:${dm}:${ds}`;
+  } else {
+    headerCountdown.textContent = '';
+  }
 }
 function esc(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
 function saveSchemes() {
@@ -1127,11 +1257,14 @@ function openConfigModal() {
   document.getElementById('kaipanlaInputs').classList.toggle('disabled', !isKpl);
   document.getElementById('cfgAshareEnabled').checked = appConfig.ashareEnabled !== false;
   configModal.classList.add('active');
+  if (configTab === 'monitor') startMonitorRefresh();
 }
 configBtn?.addEventListener('click', e => { e.stopPropagation(); openConfigModal(); });
 document.addEventListener('click', e => {
-  if (configModal && configModal.classList.contains('active') && !configModal.contains(e.target) && e.target !== configBtn)
+  if (configModal && configModal.classList.contains('active') && !configModal.contains(e.target) && e.target !== configBtn) {
     configModal.classList.remove('active');
+    stopMonitorRefresh();
+  }
 });
 document.getElementById('cfgSrcKpl')?.addEventListener('click', () => {
   document.getElementById('cfgSrcKpl').classList.add('active');
@@ -1155,9 +1288,194 @@ document.getElementById('configSaveBtn')?.addEventListener('click', () => {
   saveAppConfig();
   syncConfigToBackend();
   configModal.classList.remove('active');
+  stopMonitorRefresh();
   if (ws && ws.readyState === WebSocket.OPEN)
     ws.send(JSON.stringify({ action: 'get_sentiment' }));
 });
+
+/* ── 配置弹窗 Tab 切换 + 数据监控 ── */
+let configTab = 'settings';
+let _monitorTimer = null;
+
+document.getElementById('configTabBar')?.addEventListener('click', function(e) {
+  const btn = e.target.closest('.config-tab');
+  if (!btn) return;
+  configTab = btn.dataset.tab;
+  document.querySelectorAll('#configTabBar .config-tab').forEach(function(b) { b.classList.toggle('active', b.dataset.tab === configTab); });
+  document.getElementById('cfgTabSettings').style.display = configTab === 'settings' ? '' : 'none';
+  document.getElementById('cfgTabMonitor').style.display = configTab === 'monitor' ? '' : 'none';
+  if (configTab === 'monitor') startMonitorRefresh();
+  else stopMonitorRefresh();
+});
+
+function requestDataStatus() {
+  if (ws && ws.readyState === WebSocket.OPEN)
+    ws.send(JSON.stringify({ action: 'get_data_status' }));
+}
+
+function startMonitorRefresh() {
+  stopMonitorRefresh();
+  requestDataStatus();
+  _monitorTimer = setInterval(requestDataStatus, 5000);
+}
+
+function stopMonitorRefresh() {
+  if (_monitorTimer) { clearInterval(_monitorTimer); _monitorTimer = null; }
+}
+
+function renderMonitor(d) {
+  var el = document.getElementById('monitorContent');
+  if (!el) return;
+  var log = d.data_log || {};
+  var MLABELS = {open:'交易中',closed:'已收盘',lunch:'午休',pre:'未开盘',call:'集合竞价'};
+
+  // 场景定义：降级链知识库
+  var SCENARIOS = [
+    { key:'realtime_quotes', label:'实时行情',   desc:'个股实时价格/涨跌/成交', primary:['通达信','TDX'],   fallbacks:['新浪','腾讯'] },
+    { key:'klines_today',    label:'当日K线',    desc:'盘中K线实时更新',        primary:['通达信','TDX'],   fallbacks:['akshare','Ashare'] },
+    { key:'klines_preload',  label:'K线预加载',  desc:'历史日K批量加载',        primary:['TDX','通达信'],   fallbacks:['akshare','Ashare'] },
+    { key:'index_quotes',    label:'指数行情',   desc:'上证/深证/沪深300',      primary:['通达信','TDX'],   fallbacks:['东方财富','东财'] },
+    { key:'sh_klines',       label:'上证K线',    desc:'情绪面板走势图',         primary:['通达信','TDX'],   fallbacks:['Ashare','新浪'] },
+    { key:'market_breadth',  label:'市场宽度',   desc:'涨/跌/持平家数统计',     primary:['东方财富','东财'],fallbacks:[] },
+    { key:'sectors',         label:'题材排名',   desc:'涨停主题/领涨股',        primary:['开盘啦'],         fallbacks:['东方财富','东财','管理员'] },
+    { key:'search_index',    label:'全市场索引', desc:'股票代码+名称搜索',      primary:['akshare'],        fallbacks:['新浪'] },
+    { key:'klines_load',     label:'K线本地缓存',desc:'从本地数据库读取',       primary:['klines.db','本地'],fallbacks:[] },
+    { key:'klines_save',     label:'K线保存',    desc:'写入本地数据库',         primary:['本地'],           fallbacks:[] },
+  ];
+
+  // 数据源定义：展示在表格二
+  var SOURCES = [
+    { id:'tdx',        label:'通达信（TDX）',   sentKey:'tdx' },
+    { id:'akshare',    label:'akshare（东财）', sentKey:'akshare' },
+    { id:'eastmoney',  label:'东方财富',         sentKey:'eastmoney' },
+    { id:'kaipanla',   label:'开盘啦',           sentKey:'kaipanla' },
+    { id:'ashare',     label:'Ashare（新浪/腾讯）',sentKey:'ashare' },
+    { id:'local',      label:'本地数据库',       sentKey:'klines_cache' },
+  ];
+  // source id → 匹配关键词（用于归组 data_log 条目）
+  var SRC_KEYWORDS = {
+    tdx:       ['TDX','通达信'],
+    akshare:   ['akshare'],
+    eastmoney: ['东方财富','东财'],
+    kaipanla:  ['开盘啦'],
+    ashare:    ['Ashare','新浪','腾讯'],
+    local:     ['klines.db','本地'],
+  };
+
+  function containsAny(str, arr) {
+    if (!str) return false;
+    for (var k of arr) if (str.indexOf(k) !== -1) return true;
+    return false;
+  }
+  function isFallback(s, entry) {
+    if (!entry || !entry.ok) return false;
+    if (!s.primary.length) return false;
+    return !containsAny(entry.source, s.primary);
+  }
+  function dotCls(s, entry) {
+    if (!entry) return 'na';
+    if (!entry.ok) return 'err';
+    return isFallback(s, entry) ? 'fb' : 'ok';
+  }
+  function fmtAgo(sec) {
+    if (sec == null) return '-';
+    if (sec < 60) return sec + '秒前';
+    if (sec < 3600) return Math.floor(sec/60) + '分钟前';
+    return Math.floor(sec/3600) + '小时前';
+  }
+
+  var h = '';
+
+  // ── 表格一：按用途 ──
+  h += '<div class="mtr-section">按用途</div>';
+  h += '<table class="mtr2"><thead><tr>';
+  h += '<th>场景</th><th>来源链</th><th>当前</th><th>获取到</th><th style="text-align:right">更新</th>';
+  h += '</tr></thead><tbody>';
+  for (var s of SCENARIOS) {
+    var entry = log[s.key];
+    var dc = dotCls(s, entry);
+    var fb = entry ? isFallback(s, entry) : false;
+    var chain = s.primary[0] || '-';
+    if (s.fallbacks.length) chain += '→' + s.fallbacks.join('→');
+    h += '<tr>';
+    h += '<td class="c-name"><span class="dot ' + dc + '"></span>' + s.label;
+    if (fb) h += '<span class="badge badge-fb">fallback</span>';
+    h += '<small>' + s.desc + '</small></td>';
+    h += '<td class="c-chain">' + chain + '</td>';
+    if (!entry) {
+      h += '<td class="c-now" style="color:var(--muted)">-</td>';
+      h += '<td class="c-det" style="color:var(--muted)">未运行</td>';
+      h += '<td class="c-ago">-</td>';
+    } else {
+      var nowColor = fb ? 'color:#f59e0b;' : (!entry.ok ? 'color:#ef4444;' : '');
+      h += '<td class="c-now" style="' + nowColor + '">' + (entry.source || '-') + '</td>';
+      h += '<td class="c-det">' + (entry.detail || (entry.ok ? '成功' : '失败')) + '</td>';
+      h += '<td class="c-ago">' + fmtAgo(entry.ago) + '</td>';
+    }
+    h += '</tr>';
+  }
+  h += '</tbody></table>';
+
+  // ── 表格二：按数据源 ──
+  // 从 data_log 统计每个数据源的成功/失败次数和承担的用途
+  var srcStats = {};
+  for (var sid of Object.keys(SRC_KEYWORDS)) srcStats[sid] = { ok:0, err:0, uses:[] };
+  for (var logKey of Object.keys(log)) {
+    var e = log[logKey];
+    for (var sid of Object.keys(SRC_KEYWORDS)) {
+      if (containsAny(e.source, SRC_KEYWORDS[sid])) {
+        if (e.ok) srcStats[sid].ok++;
+        else srcStats[sid].err++;
+        // 找对应场景 label
+        var sc = SCENARIOS.find(function(x){ return x.key === logKey; });
+        if (sc && srcStats[sid].uses.indexOf(sc.label) === -1) srcStats[sid].uses.push(sc.label);
+        break;
+      }
+    }
+  }
+  // sentiment.sources 提供可用性覆盖
+  var snt = (typeof sentimentData !== 'undefined' && sentimentData && sentimentData.sources) ? sentimentData.sources : {};
+
+  h += '<div class="mtr-section">🔌 按数据源</div>';
+  h += '<table class="mtr2"><thead><tr>';
+  h += '<th>数据源</th><th>用途</th><th style="text-align:center">成功</th><th style="text-align:center">失败</th>';
+  h += '</tr></thead><tbody>';
+  for (var src of SOURCES) {
+    var st = srcStats[src.id];
+    var sentOk = src.sentKey in snt ? snt[src.sentKey] : null;
+    // 状态判断：优先用 sentOk，其次看 data_log 统计
+    var dc2;
+    if (sentOk === true) dc2 = (st.err > 0 ? 'fb' : 'ok');
+    else if (sentOk === false) dc2 = 'err';
+    else if (st.ok > 0) dc2 = (st.err > 0 ? 'fb' : 'ok');
+    else if (st.err > 0) dc2 = 'err';
+    else dc2 = 'na';
+    var usesStr = st.uses.length ? st.uses.join('、') : '—';
+    h += '<tr>';
+    h += '<td class="c-name"><span class="dot ' + dc2 + '"></span>' + src.label + '</td>';
+    h += '<td class="c-uses">' + usesStr + '</td>';
+    h += '<td class="c-cnt">' + (st.ok || '—') + '</td>';
+    h += '<td class="c-cnt" style="' + (st.err > 0 ? 'color:#ef4444;' : '') + '">' + (st.err || '—') + '</td>';
+    h += '</tr>';
+  }
+  h += '</tbody></table>';
+
+  // ── 底部状态 ──
+  h += '<div class="mtr-footer">';
+  h += '<span>市场：' + (MLABELS[d.market_state] || '未知') + '</span>';
+  h += '<span>WS ' + (d.ws_clients || 0) + '个</span>';
+  h += '<span>' + (d.updated_at || '') + '</span>';
+  h += '</div>';
+  if (d.snapshot_total || d.active_stocks) {
+    h += '<div class="mtr-footer2">';
+    h += '<span>快照 ' + (d.snapshot_total || 0) + '只' + (d.snapshot_date ? ' (' + d.snapshot_date + ')' : '') + '</span>';
+    h += '<span>监控池 ' + (d.active_stocks || 0) + '只</span>';
+    h += '</div>';
+  }
+
+  el.textContent = '';
+  el.insertAdjacentHTML('beforeend', h);
+}
 
 /* ── 迷你图 ── */
 function drawAllMiniCharts() {
@@ -1202,7 +1520,7 @@ function drawM(ctx,W,H,bp,cp) {
 }
 
 /* ── 事件绑定 ── */
-let sentimentData = null;
+let sentimentData = JSON.parse(localStorage.getItem('stock-radar-sentiment') || 'null');
 
 function bindSentimentRefreshBtn() {
   const btn = document.getElementById('sentimentRefreshBtn');
@@ -1230,9 +1548,14 @@ opacitySlider?.addEventListener('input', e => { const v=Number(e.target.value)/1
 /* ── K线观察框 ── */
 let kvCurrentCode = '';
 let kvCurrentName = '';
-let kvDays = 60;
-const KV_MIN_DAYS = 10;
-const KV_MAX_DAYS = 150;
+let kvDays = 60;               // 请求天数（后端 days 参数）
+let kvVisibleBars = 60;        // 当前视图内显示的根数（wheel 缩放）
+let kvOffset = 0;              // 向左平移偏移量（0 = 最新数据靠右）
+let kvPeriod = 'daily';        // 当前周期 60min/daily/weekly/monthly
+let kvDragStartX = null;       // 鼠标拖拽起点
+let kvDragStartOffset = null;  // 拖拽开始时的 kvOffset
+const KV_MIN_BARS = 10;
+const KV_MAX_BARS = 200;
 const KV_STEP = 10;
 
 const kvCanvas = document.getElementById('kvCanvas');
@@ -1267,6 +1590,14 @@ async function fetchDailyKlines(code, days) {
 }
 
 function selectStock(code, name, change) {
+  // 限制缓存最多保留 10 只股票，超过时删最老的
+  if (code !== kvCurrentCode) {
+    const cachedCodes = [...new Set(Object.keys(kvKlinesCache).map(k => k.split('_')[0]))];
+    if (cachedCodes.length >= 10) {
+      const oldest = cachedCodes[0];
+      for (const key of Object.keys(kvKlinesCache)) { if (key.startsWith(oldest + '_')) delete kvKlinesCache[key]; }
+    }
+  }
   kvCurrentCode = code;
   kvCurrentName = name;
   kvStockName.textContent = name;
@@ -1291,14 +1622,14 @@ function selectStock(code, name, change) {
 
   // 请求K线数据
   if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ action: 'get_klines', code: code, days: kvDays }));
+    ws.send(JSON.stringify({ action: 'get_klines', code: code, days: kvDays, period: kvPeriod }));
   }
 }
 
 function drawKlineViewer(klines) {
   if (!kvCanvas || !kvCtx || !klines || !klines.length) {
     kvEmpty.style.display = 'flex';
-    kvEmpty.textContent = '📊 暂无K线数据';
+    kvEmpty.textContent = '暂无K线数据';
     kvCanvas.style.display = 'none';
     return;
   }
@@ -1318,10 +1649,16 @@ function drawKlineViewer(klines) {
   const ctx = kvCtx;
   ctx.clearRect(0, 0, W, H);
 
-  const data = klines.slice(-kvDays);
+  // 用 kvVisibleBars + kvOffset 控制视口切片
+  const totalBars = klines.length;
+  const clampedOffset = Math.max(0, Math.min(kvOffset, Math.max(0, totalBars - kvVisibleBars)));
+  kvOffset = clampedOffset;
+  const endIdx = totalBars - clampedOffset;
+  const startIdx = Math.max(0, endIdx - kvVisibleBars);
+  const data = klines.slice(startIdx, endIdx);
   if (!data.length) return;
 
-  const padTop = 30, padBot = 25, padLeft = 50, padRight = 15;
+  const padTop = 30, padBot = 32, padLeft = 50, padRight = 15;
   const chartW = W - padLeft - padRight;
   const chartH = H - padTop - padBot;
 
@@ -1452,35 +1789,36 @@ function drawKlineViewer(klines) {
     }
     ctx.closePath(); ctx.fill();
     ctx.globalAlpha = 1;
-    // 3 条虚线
-    function drawDashLine(values, color) {
-      ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.setLineDash([3, 2]);
+    // 3 条实线
+    function drawBollLine(values, color) {
+      ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.setLineDash([]);
       ctx.beginPath(); let s = false;
       for (let i = 0; i < values.length; i++) {
         if (values[i] === null) continue;
         const x = padLeft + (i + 0.5) * barW, y = toY(values[i]);
         if (!s) { ctx.moveTo(x, y); s = true; } else ctx.lineTo(x, y);
       }
-      ctx.stroke(); ctx.setLineDash([]);
+      ctx.stroke();
     }
-    drawDashLine(bollUpper, '#e879f9');
-    drawDashLine(bollMiddle, '#6366f1');
-    drawDashLine(bollLower, '#38bdf8');
+    drawBollLine(bollUpper, '#e879f9');
+    drawBollLine(bollMiddle, '#6366f1');
+    drawBollLine(bollLower, '#38bdf8');
   }
 
-  // 叠加层：回撤线
+  // 叠加层：回撤线（基于当前可见范围的高低点，画水平虚线）
   if (kvOverlayRetracement && data.length > 1) {
-    const rd = Math.min(kvOverlayRetraceDays, data.length);
-    const recent = data.slice(-rd);
-    const rHigh = Math.max(...recent.map(k => k.high));
-    const rLow = Math.min(...recent.map(k => k.low));
-    const level = rHigh - (rHigh - rLow) * kvOverlayRetraceRatio;
-    const y = padTop + (hi - level) / totalRange * chartH;
-    ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 1.5; ctx.setLineDash([6, 3]);
-    ctx.beginPath(); ctx.moveTo(padLeft, y); ctx.lineTo(W - padRight, y); ctx.stroke();
-    ctx.setLineDash([]);
+    const ratio = kvOverlayRetraceRatio;
+    const rHigh = Math.max(...data.map(k => k.high));
+    const rLow  = Math.min(...data.map(k => k.low));
+    const retraceVal = rHigh - (rHigh - rLow) * ratio;
+    const ry = padTop + (hi - retraceVal) / totalRange * chartH;
+    ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.moveTo(padLeft, ry);
+    ctx.lineTo(padLeft + chartW, ry);
+    ctx.stroke(); ctx.setLineDash([]);
     ctx.fillStyle = '#f59e0b'; ctx.font = '9px monospace'; ctx.textAlign = 'right';
-    ctx.fillText(`回撤 ${(kvOverlayRetraceRatio*100).toFixed(1)}% = ${level.toFixed(2)}`, W - padRight - 4, y - 4);
+    ctx.fillText(`回撤${(ratio*100).toFixed(1)}%=${retraceVal.toFixed(2)}`, W - padRight - 4, ry - 4);
   }
 
   // 日期标签
@@ -1491,7 +1829,12 @@ function drawKlineViewer(klines) {
   for (let i = 0; i < data.length; i += step) {
     if (data[i].date) {
       const x = padLeft + (i + 0.5) * barW;
-      ctx.fillText(data[i].date, x, H - 8);
+      const d = data[i].date;
+      let label;
+      if (kvPeriod === '60min')      label = d.slice(11, 16);  // HH:MM
+      else if (kvPeriod === 'daily') label = d.slice(5, 10);   // MM-DD
+      else                           label = d.slice(0, 7);    // YYYY-MM（周K/月K）
+      ctx.fillText(label, x, H - padBot + 18);
     }
   }
 
@@ -1523,66 +1866,131 @@ function drawKlineViewer(klines) {
   ctx.fillStyle = 'rgba(255,255,255,0.6)';
   ctx.font = '11px sans-serif';
   ctx.textAlign = 'right';
-  ctx.fillText(kvCurrentName + ' ' + kvCurrentCode + ' ' + kvDays + '日K线', W - padRight, 14);
+  const periodLabel = {daily:'日K', weekly:'周K', monthly:'月K', '60min':'时K'}[kvPeriod] || '日K';
+  ctx.fillText(kvCurrentName + ' ' + kvCurrentCode + ' ' + data.length + '根 ' + periodLabel, W - padRight, 14);
 }
 
-// 放大缩小
+// +/- 按钮：调整 visibleBars（本地缩放，不重新请求）
 document.getElementById('kvZoomOut')?.addEventListener('click', () => {
-  kvDays = Math.max(KV_MIN_DAYS, kvDays - KV_STEP);
-  kvDaysLabel.textContent = kvDays + '日';
-  if (kvCurrentCode && ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ action: 'get_klines', code: kvCurrentCode, days: kvDays }));
-  }
+  kvVisibleBars = Math.max(KV_MIN_BARS, kvVisibleBars - KV_STEP);
+  kvDaysLabel.textContent = kvVisibleBars;
+  redrawKlineViewer();
 });
 document.getElementById('kvZoomIn')?.addEventListener('click', () => {
-  kvDays = Math.min(KV_MAX_DAYS, kvDays + KV_STEP);
-  kvDaysLabel.textContent = kvDays + '日';
-  if (kvCurrentCode && ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ action: 'get_klines', code: kvCurrentCode, days: kvDays }));
+  kvVisibleBars = Math.min(KV_MAX_BARS, kvVisibleBars + KV_STEP);
+  kvDaysLabel.textContent = kvVisibleBars;
+  // 如果 visibleBars 超出已有数据量，自动补请求
+  if (kvLastKlines && kvVisibleBars > kvLastKlines.length && kvCurrentCode && ws?.readyState === WebSocket.OPEN) {
+    kvDays = Math.min(300, kvVisibleBars + 20);
+    ws.send(JSON.stringify({ action: 'get_klines', code: kvCurrentCode, days: kvDays, period: kvPeriod }));
+  } else {
+    redrawKlineViewer();
   }
+});
+
+// period tab 切换
+document.querySelectorAll('.kv-period-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.kv-period-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    kvPeriod = btn.dataset.period;
+    kvOffset = 0;
+    // 根据周期调整默认 days
+    if (kvPeriod === '60min')        { kvDays = 5;   kvVisibleBars = 60; }
+    else if (kvPeriod === 'weekly')  { kvDays = 100; kvVisibleBars = 60; }
+    else if (kvPeriod === 'monthly') { kvDays = 60;  kvVisibleBars = 36; }
+    else                             { kvDays = 150; kvVisibleBars = 60; }
+    kvDaysLabel.textContent = kvVisibleBars;
+    if (!kvCurrentCode) return;
+    // 先查前端缓存，命中则直接绘制
+    const cached = kvKlinesCache[kvCurrentCode + '_' + kvPeriod];
+    if (cached && cached.length) { kvLastKlines = cached; drawKlineViewer(cached); return; }
+    // 缓存未命中：显示 loading 并请求
+    kvCanvas.style.display = 'none';
+    kvEmpty.style.display = 'flex';
+    kvEmpty.textContent = '⏳ 加载K线中…';
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ action: 'get_klines', code: kvCurrentCode, days: kvDays, period: kvPeriod }));
+    }
+  });
 });
 
 // 叠加层控制
 function redrawKlineViewer() { if (kvLastKlines) drawKlineViewer(kvLastKlines); }
-document.getElementById('kvToggleBoll')?.addEventListener('click', function() {
+document.getElementById('kvBtnBoll')?.addEventListener('click', function() {
   kvOverlayBollinger = !kvOverlayBollinger;
   this.classList.toggle('active', kvOverlayBollinger);
   redrawKlineViewer();
 });
-document.getElementById('kvBollPeriod')?.addEventListener('change', function() {
-  kvOverlayBollingerPeriod = parseInt(this.value) || 20;
-  if (kvOverlayBollinger) redrawKlineViewer();
-});
-document.getElementById('kvToggleRetrace')?.addEventListener('click', function() {
+document.getElementById('kvBtnRetrace')?.addEventListener('click', function() {
   kvOverlayRetracement = !kvOverlayRetracement;
   this.classList.toggle('active', kvOverlayRetracement);
   redrawKlineViewer();
 });
-document.getElementById('kvRetraceDays')?.addEventListener('change', function() {
-  kvOverlayRetraceDays = parseInt(this.value) || 20;
-  if (kvOverlayRetracement) redrawKlineViewer();
+const kvSettingsPopup = document.getElementById('kvSettingsPopup');
+document.getElementById('kvBtnSettings')?.addEventListener('click', function(e) {
+  e.stopPropagation();
+  kvSettingsPopup?.classList.toggle('open');
+});
+document.addEventListener('click', function() {
+  kvSettingsPopup?.classList.remove('open');
+});
+document.getElementById('kvBollPeriod')?.addEventListener('change', function() {
+  kvOverlayBollingerPeriod = parseInt(this.value) || 20;
+  if (kvOverlayBollinger) redrawKlineViewer();
 });
 document.getElementById('kvRetraceRatio')?.addEventListener('change', function() {
   kvOverlayRetraceRatio = parseFloat(this.value) || 0.382;
   if (kvOverlayRetracement) redrawKlineViewer();
 });
 
-// 键盘上下键
+// 键盘上下键：调整 visibleBars
 document.addEventListener('keydown', (e) => {
+  if (!kvCurrentCode) return;
   if (e.key === 'ArrowUp') {
     e.preventDefault();
-    kvDays = Math.max(KV_MIN_DAYS, kvDays - KV_STEP);
-    kvDaysLabel.textContent = kvDays + '日';
-    if (kvCurrentCode && ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ action: 'get_klines', code: kvCurrentCode, days: kvDays }));
-    }
+    kvVisibleBars = Math.max(KV_MIN_BARS, kvVisibleBars - KV_STEP);
+    kvDaysLabel.textContent = kvVisibleBars;
+    redrawKlineViewer();
   } else if (e.key === 'ArrowDown') {
     e.preventDefault();
-    kvDays = Math.min(KV_MAX_DAYS, kvDays + KV_STEP);
-    kvDaysLabel.textContent = kvDays + '日';
-    if (kvCurrentCode && ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ action: 'get_klines', code: kvCurrentCode, days: kvDays }));
-    }
+    kvVisibleBars = Math.min(KV_MAX_BARS, kvVisibleBars + KV_STEP);
+    kvDaysLabel.textContent = kvVisibleBars;
+    redrawKlineViewer();
+  }
+});
+
+// wheel 缩放（在 canvas 上）
+kvCanvas?.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? KV_STEP : -KV_STEP;
+  kvVisibleBars = Math.max(KV_MIN_BARS, Math.min(KV_MAX_BARS, kvVisibleBars + delta));
+  kvDaysLabel.textContent = kvVisibleBars;
+  redrawKlineViewer();
+}, { passive: false });
+
+// 鼠标拖拽平移（在 canvas 上）
+kvCanvas?.addEventListener('mousedown', (e) => {
+  if (e.button !== 0) return;
+  kvDragStartX = e.clientX;
+  kvDragStartOffset = kvOffset;
+  kvCanvas.style.cursor = 'grabbing';
+});
+kvCanvas?.addEventListener('mousemove', (e) => {
+  if (kvDragStartX === null || !kvLastKlines) return;
+  const w = kvCanvas.getBoundingClientRect().width;
+  const barsPerPx = kvVisibleBars / (w || 1);
+  const dx = e.clientX - kvDragStartX;
+  kvOffset = Math.max(0, Math.min(
+    Math.max(0, kvLastKlines.length - kvVisibleBars),
+    Math.round(kvDragStartOffset - dx * barsPerPx)
+  ));
+  redrawKlineViewer();
+});
+document.addEventListener('mouseup', () => {
+  if (kvDragStartX !== null) {
+    kvDragStartX = null;
+    if (kvCanvas) kvCanvas.style.cursor = 'crosshair';
   }
 });
 
@@ -1607,13 +2015,10 @@ alertList.addEventListener('click', (e) => {
   }
 });
 
-// 窗口大小变化时重绘
+// 窗口大小变化时重绘（本地重绘，无需重新请求）
 window.addEventListener('resize', () => {
   if (kvCurrentCode && kvCanvas.style.display !== 'none') {
-    // 重新请求数据以触发重绘
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ action: 'get_klines', code: kvCurrentCode, days: kvDays }));
-    }
+    redrawKlineViewer();
   }
 });
 
@@ -1713,14 +2118,16 @@ function renderSearchToAlertList(results) {
     info.appendChild(mid);
     card.appendChild(info);
     card.addEventListener('click', () => {
-      if (s.code && window.radarAPI?.openStock) window.radarAPI.openStock(s.code);
+      selectStock(s.code, s.name, s.change || 0);
+      if (window.radarAPI?.openStock) window.radarAPI.openStock(s.code);
     });
     alertList.appendChild(card);
   });
 }
 
+let _searchDebounceTimer = null;
 searchInput?.addEventListener('input', () => {
-  const q = searchInput.value.trim().toLowerCase();
+  const q = searchInput.value.trim();
   if (!q) {
     alertList.textContent = '';
     const empty = document.createElement('div');
@@ -1736,10 +2143,20 @@ searchInput?.addEventListener('input', () => {
     alertList.appendChild(empty);
     return;
   }
-  const results = allStocks.filter(s =>
-    s.code.includes(q) || s.name.toLowerCase().includes(q)
+  // 先用本地 allStocks 即时显示
+  const qLow = q.toLowerCase();
+  const localResults = allStocks.filter(s =>
+    s.code.includes(q) || s.name.toLowerCase().includes(qLow)
   ).slice(0, 30);
-  renderSearchToAlertList(results);
+  if (localResults.length > 0) renderSearchToAlertList(localResults);
+
+  // 再通过 WebSocket 向服务端请求全市场搜索（防抖 300ms）
+  clearTimeout(_searchDebounceTimer);
+  _searchDebounceTimer = setTimeout(() => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ action: 'search_stocks', query: q }));
+    }
+  }, 300);
 });
 
 searchInput?.addEventListener('keydown', (e) => {
@@ -1755,7 +2172,8 @@ searchInput?.addEventListener('keydown', (e) => {
 function connectWS() {
   refreshStatus.textContent='连接中…'; refreshDot.style.background='#f59e0b';
   const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${wsProto}//${location.host}`;
+  const wsHost = location.host || 'localhost:31749';
+  const wsUrl = `${wsProto}//${wsHost}`;
   ws = new WebSocket(wsUrl);
   ws.onopen = () => {
     wsConnected=true; refreshStatus.textContent='已连接'; refreshDot.style.background='#22c55e';
@@ -1766,42 +2184,71 @@ function connectWS() {
     ws.send(JSON.stringify({ action: 'get_sentiment' }));
     // auto-login with saved token
     if (authToken && cloudSyncEnabled) {
-      const overlay = document.getElementById('authOverlay');
-      overlay.style.display = 'flex';
-      document.getElementById('authModalTitle').textContent = '正在验证登录…';
-      document.getElementById('authUsername').style.display = 'none';
-      document.getElementById('authPassword').style.display = 'none';
-      document.getElementById('authLoginBtn').style.display = 'none';
-      document.getElementById('authRegisterBtn').style.display = 'none';
-      document.getElementById('authError').style.display = 'none';
-      ws.send(JSON.stringify({ action: 'auth_token', token: authToken }));
+      if (authUser) {
+        // 有本地缓存用户，直接进入主界面，后台静默验证 token
+        updateAuthUI();
+        ws.send(JSON.stringify({ action: 'auth_token', token: authToken }));
+      } else {
+        // 无缓存用户（首次或已登出），弹出验证遮罩
+        const overlay = document.getElementById('authOverlay');
+        overlay.style.display = 'flex';
+        document.getElementById('authModalTitle').textContent = '正在验证登录…';
+        document.getElementById('authUsername').style.display = 'none';
+        document.getElementById('authPassword').style.display = 'none';
+        document.getElementById('authLoginBtn').style.display = 'none';
+        document.getElementById('authRegisterBtn').style.display = 'none';
+        document.getElementById('authError').style.display = 'none';
+        ws.send(JSON.stringify({ action: 'auth_token', token: authToken }));
+      }
     }
     // 同步模式通知后端
     ws.send(JSON.stringify({ action: 'set_sync_mode', enabled: cloudSyncEnabled }));
-    // ── 强制登录：WS连接后，无token则弹出登录框 ──
-    if (!authToken) { showAuthModal(); }
+    // 注意：不在此处补发 sync_watchlist/sync_schemes，因为 auth_token 验证是异步的
+    // 后端尚未设置 auth_user，sync 消息会被静默丢弃。
+    // 用户操作时（saveSchemes/saveWatchlist）才发送，此时 auth_user 已就绪。
+    // ── 强制登录：无已登录用户则弹出登录框（无论云同步是否开启）──
+    if (!authUser) { showAuthModal(); }
     // 清除登录框中的连接提示
     const _authErr = document.getElementById('authError');
     if (_authErr && _authErr.textContent.includes('连接')) _authErr.textContent = '';
     // 显示加载中提示，等 init/screen_results 消息回来再渲染列表
-    alertList.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-title">加载中…</div><div class="empty-desc">正在拉取股票数据</div></div>';
+    if (!alerts.length) {
+      alertList.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-title">加载中…</div><div class="empty-desc">正在拉取股票数据</div></div>';
+    }
   };
   ws.onmessage = e => { try { const d = JSON.parse(e.data);
-    if (d.type==='init') { alerts=d.alerts||[]; for(const a of alerts){if(a.klines&&a.klines.length)klinesMap[a.id]=a.klines;} if(d.market)updateMarketLabel(d.market); if(d.sources)updateSourceDots(d.sources); if(d.stocks_all) allStocks=d.stocks_all; renderList(); if(!kvCurrentCode && d.sh_klines && d.sh_klines.length){ kvStockName.textContent='上证指数'; kvStockCode.textContent=''; kvStockChange.textContent=''; kvEmpty.style.display='none'; kvCanvas.style.display='block'; kvLastKlines=d.sh_klines; drawKlineViewer(d.sh_klines); } }
-    if (d.type==='alerts') { const items=d.items||[],ids=items.map(i=>i.id); for(const a of items){if(a.klines&&a.klines.length)klinesMap[a.id]=a.klines;} alerts=[...items,...alerts].slice(0,200); renderList(ids); alertList.scrollTop=0; }
+    if (d.type==='init') { const incoming=d.alerts||[]; if(incoming.length>0||!alerts.length){ alerts=incoming; for(const a of alerts){if(a.klines&&a.klines.length)klinesMap[a.id]=a.klines;} try{localStorage.setItem('stock-radar-alerts',JSON.stringify(alerts.slice(0,50).map(({klines,...r})=>r)));}catch(e){} try{localStorage.setItem('stock-radar-alerts-ts',Date.now());}catch(e){} } if(d.market)updateMarketLabel(d.market); if(d.sources)updateSourceDots(d.sources); if(d.stocks_all) allStocks=d.stocks_all; renderList(); if(!kvCurrentCode && d.sh_klines && d.sh_klines.length){ kvStockName.textContent='上证指数'; kvStockCode.textContent=''; kvStockChange.textContent=''; kvEmpty.style.display='none'; kvCanvas.style.display='block'; kvLastKlines=d.sh_klines; drawKlineViewer(d.sh_klines); } }
+    if (d.type==='alerts') { const items=d.items||[],ids=items.map(i=>i.id); for(const a of items){if(a.klines&&a.klines.length)klinesMap[a.id]=a.klines;} const existingCodes=new Set(alerts.map(a=>a.code)); const hasNew=items.some(a=>!existingCodes.has(a.code)); const am=new Map(alerts.map(a=>[a.code,a])); for(const a of items){const old=am.get(a.code);if(old&&old.matched_schemes)a.matched_schemes=old.matched_schemes;am.set(a.code,a);} alerts=[...am.values()].sort((a,b)=>b.timestamp-a.timestamp).slice(0,200); if(currentMode!=='search'&&hasNew){renderList(ids);alertList.scrollTop=0;} try{localStorage.setItem('stock-radar-alerts',JSON.stringify(alerts.slice(0,50).map(({klines,...r})=>r)));}catch(e){} }
     if (d.type==='market') updateMarketLabel(d.state);
-    if (d.type==='sentiment') { sentimentData = d.data; if(d.data.sources)updateSourceDots(d.data.sources); renderRightSentiment(d.data); if(!kvCurrentCode && d.data.sh_klines && d.data.sh_klines.length) { kvStockName.textContent='上证指数'; kvStockCode.textContent='000001.SH'; kvStockChange.textContent=''; kvEmpty.style.display='none'; kvCanvas.style.display='block'; kvLastKlines=d.data.sh_klines; drawKlineViewer(d.data.sh_klines); } else if(!kvCurrentCode) { kvEmpty.textContent='📊 大盘数据加载中…'; } }
-    if (d.type==='screen_results') { if (d.alerts && d.alerts.length > 0) { alerts = d.alerts; } renderList(); }
-    if (d.type==='klines') { kvLastKlines = d.data; drawKlineViewer(d.data); }
+    if (d.type==='sentiment') { sentimentData = d.data; if(d.data.sources)updateSourceDots(d.data.sources); renderRightSentiment(d.data); try{localStorage.setItem('stock-radar-sentiment',JSON.stringify(d.data));}catch(e){} if(!kvCurrentCode && d.data.sh_klines && d.data.sh_klines.length) { kvStockName.textContent='上证指数'; kvStockCode.textContent='000001.SH'; kvStockChange.textContent=''; kvEmpty.style.display='none'; kvCanvas.style.display='block'; kvLastKlines=d.data.sh_klines; drawKlineViewer(d.data.sh_klines); } else if(!kvCurrentCode) { kvEmpty.textContent='大盘数据加载中…'; } }
+    if (d.type==='screen_results') { _schemeScreened=true; _screenDataDate=d.data_date||''; _screenIsRealtime=d.is_realtime!==false; const sa=d.alerts||[]; if(sa.length>0){alerts=sa;}else{alerts=alerts.map(({matched_schemes,...rest})=>rest);} if(currentMode!=='search') renderList(); }
+    if (d.type==='klines') { kvLastKlines = d.data; if(kvCurrentCode && d.data && d.data.length) kvKlinesCache[kvCurrentCode+'_'+kvPeriod]=d.data; drawKlineViewer(d.data); }
     if (d.type==='watchlist_results') { watchlistResults = d.results || []; if (currentMode === 'watchlist') renderWatchlistPanel(); }
     if (d.type==='auth_result') { handleAuthResult(d); }
+    if (d.type==='cloud_sync') { handleAuthResult({success:true, saved_watchlist:d.saved_watchlist, saved_schemes:d.saved_schemes}); }
     if (d.type==='admin_users') { renderAdminPanel(d.users || []); }
     if (d.type==='admin_sectors_ok') {
       const st = document.getElementById('adminSectorStatus');
       if (st) st.textContent = d.count > 0 ? `已保存 ${d.count} 条板块数据` : '已清除，将使用真实数据';
     }
+    if (d.type==='scheme_templates') {
+      if (_templatesTarget === 'admin') renderAdminTemplatesPanel(d.templates || []);
+      else renderUserTemplateList(d.templates || []);
+      _templatesTarget = null;
+    }
+    if (d.type==='admin_template_saved' || d.type==='admin_template_deleted') { loadAdminTemplates(); }
+    if (d.type==='search_results') {
+      // 服务端返回全市场搜索结果，若搜索框仍有相同关键字则更新列表
+      const cur = searchInput?.value?.trim();
+      if (cur && d.query === cur && currentMode === 'search') {
+        const merged = d.results || [];
+        renderSearchToAlertList(merged);
+      }
+    }
+    if (d.type==='stocks_index') { allStocks = d.stocks || []; console.log(`[搜索索引] 更新：${allStocks.length} 只`); }
     if (d.type==='sync_ok') { /* silent */ }
     if (d.type==='sync_mode') { updateSyncUI(); }
+    if (d.type==='data_status') { renderMonitor(d); }
     if (d.type==='sector_stocks') {
       // 板块股票数据返回，填充对应的展开区域
       const sectorName = d.sector_name;
@@ -1838,7 +2285,12 @@ function connectWS() {
 /* ── 启动 ── */
 updateMarketLabel('closed');
 renderSchemeBar();
+if (authUser) updateAuthUI();
+if (alerts.length) renderList();
+if (sentimentData) renderRightSentiment(sentimentData);
 connectWS();
+setInterval(_updateHeaderClock, 1000);
+_updateHeaderClock();
 
 /* ── 获取当前启用的方案名集合 ── */
 function getEnabledSchemeNames() {
@@ -1976,11 +2428,16 @@ function renderWatchlistPanel() {
 function renderList(newIds) {
   const f = alerts;
   const enabledNames = getEnabledSchemeNames();
-  // 过滤：只显示至少有一个启用方案匹配的 alert
-  const filtered = f.filter(a => {
-    if (!a.matched_schemes || !a.matched_schemes.length) return true;
-    return a.matched_schemes.some(m => enabledNames.has(m));
-  });
+  // 有启用方案时：只显示 matched_schemes 命中的结果；无启用方案时：龙头视图
+  let filtered;
+  let hotHeader = '';
+  if (enabledNames.size > 0) {
+    filtered = f.filter(a => a.matched_schemes && a.matched_schemes.some(m => enabledNames.has(m)));
+  } else {
+    const rising = [...f].filter(a => a.change > 0).sort((a, b) => b.change - a.change).slice(0, 20);
+    filtered = rising.length > 0 ? rising : [...f].sort((a, b) => b.change - a.change).slice(0, 20);
+    hotHeader = '<div style="font-size:10px;color:var(--muted);padding:4px 10px 2px;">涨幅榜（未启用方案）</div>';
+  }
   // 自选股置顶
   filtered.sort((a, b) => {
     const aInWl = watchlist.includes(a.code);
@@ -1989,12 +2446,24 @@ function renderList(newIds) {
     return 0;
   });
   if (!filtered.length) {
-    const emptyMsg = { icon:'📡', title: wsConnected?'暂无异动':'等待连接', desc: wsConnected?'等待符合方案的个股…':'连接引擎中…' };
-    alertList.innerHTML = `<div class="empty-state"><div class="empty-icon">${emptyMsg.icon}</div><div class="empty-title">${emptyMsg.title}</div><div class="empty-desc">${emptyMsg.desc}</div></div>`;
+    let icon = svgIcon('signal', 28), title, desc;
+    if (enabledNames.size > 0 && !_schemeScreened) {
+      icon = '⏳'; title = '选股中…'; desc = '正在匹配方案条件';
+    } else if (wsConnected && enabledNames.size > 0 && _schemeScreened && !_screenIsRealtime) {
+      title = '暂无符合条件的个股';
+      desc = `基于 ${_screenDataDate || '最新'} 数据，无命中`;
+    } else {
+      title = wsConnected ? '暂无异动' : '等待连接';
+      desc = wsConnected ? '等待符合方案的个股…' : '连接引擎中…';
+    }
+    alertList.innerHTML = `<div class="empty-state"><div class="empty-icon">${icon}</div><div class="empty-title">${title}</div><div class="empty-desc">${desc}</div></div>`;
     return;
   }
   const ns = new Set(newIds||[]);
-  alertList.innerHTML = filtered.map(a => renderAlert(a, ns.has(a.id), enabledNames)).join('');
+  const dataHint = (!_screenIsRealtime && _screenDataDate)
+    ? `<div style="font-size:9px;color:var(--muted);padding:3px 10px 2px;text-align:right;">📅 数据截止 ${_screenDataDate}（非实时）</div>`
+    : '';
+  alertList.innerHTML = dataHint + hotHeader + filtered.map(a => renderAlert(a, ns.has(a.id), enabledNames)).join('');
   requestAnimationFrame(drawAllMiniCharts);
   alertList.querySelectorAll('.alert-card').forEach(card => {
     card.addEventListener('click', () => {
@@ -2035,10 +2504,10 @@ function renderSchemeBar() {
 
 /* ── 设置面板渲染 ── */
 const CONDITION_GROUPS = [
-  { label: '📊 价格条件', keys: ['limitUp','limitDown','marketCap','shortRise'] },
-  { label: '📈 量能条件', keys: ['amountHigh','amountLow','amountMultiple','volumeRatio','bigOrder'], hasAshareWarning: true },
-  { label: '🔧 技术指标', keys: ['breakMinMA','breakDayMA','breakGolden','bollingerUp','bollingerDown'] },
-  { label: '🏗 形态识别', keys: ['cupHandle','priceCompare','amountCompare'], hasAshareWarning: true },
+  { label: '价格条件', keys: ['limitUp','limitDown','marketCap','shortRise'] },
+  { label: '量能条件', keys: ['amountHigh','amountLow','amountMultiple','volumeRatio','bigOrder'], hasAshareWarning: true },
+  { label: '技术指标', keys: ['breakMinMA','breakDayMA','breakGolden','bollingerUp','bollingerDown'] },
+  { label: '形态识别', keys: ['cupHandle','priceCompare','amountCompare'], hasAshareWarning: true },
 ];
 
 function renderConditionInputs(def, cond, schemeId) {
@@ -2062,6 +2531,8 @@ function renderConditionInputs(def, cond, schemeId) {
   } else if (k === 'breakGolden') {
     h += `<input type="number" class="cond-input" data-scheme="${schemeId}" data-key="breakGolden" data-field="days" value="${cond.days||20}" step="1" /><span class="cond-unit">天内</span>`;
     h += `<input type="number" class="cond-input w70" data-scheme="${schemeId}" data-key="breakGolden" data-field="ratio" value="${cond.ratio||0.382}" step="0.001" /><span class="cond-unit">系数</span>`;
+    const bgMode = cond.mode || 'cross';
+    h += `<select class="cond-input" style="width:90px;" data-scheme="${schemeId}" data-key="breakGolden" data-field="mode"><option value="cross" ${bgMode==='cross'?'selected':''}>仅当天突破</option><option value="above" ${bgMode==='above'?'selected':''}>当前在上方</option></select>`;
     h += `<div class="cond-hint">最高价 −（最高价 − 最低价）× 系数</div>`;
   } else if (k === 'amountMultiple') {
     h += `<input type="number" class="cond-input" data-scheme="${schemeId}" data-key="amountMultiple" data-field="multiple" value="${cond.multiple||2}" step="0.5" /><span class="cond-unit">倍</span>`;
@@ -2165,17 +2636,31 @@ function renderSettings() {
     html += `<button class="${cls}" data-id="${st.id}">${esc(st.name)}</button>`;
   }
   html += `<button class="scheme-tab-add" title="新建空白策略">＋</button>`;
-  html += `<select class="template-select" id="templateSelect" title="从模板创建"><option value="">📋 模板</option>`;
-  for (const t of SCHEME_TEMPLATES) {
-    html += `<option value="${t.id}">${t.name}</option>`;
-  }
-  html += `</select></div>`;
+  html += `</div>`;
   html += `<div class="settings-scroll">`;
+  // 官方模板折叠区
+  html += `<details style="margin-bottom:8px;border:1px solid var(--border);border-radius:7px;overflow:hidden;">`;
+  html += `<summary style="cursor:pointer;padding:7px 10px;font-size:11px;font-weight:600;color:var(--muted);list-style:none;display:flex;align-items:center;gap:6px;">`;
+  html += `<span style="font-size:13px;">${svgIcon('clipboard', 13)}</span> 官方模板`;
+  html += `</summary>`;
+  html += `<div id="officialTemplateList" style="padding:6px 10px;"></div>`;
+  html += `</details>`;
   const s = schemes.find(x => x.id === activeSchemeTab);
   if (s) {
     html += `<div class="scheme-card" data-id="${s.id}"><div class="scheme-card-head">`;
-    html += `<input class="scheme-name-input" value="${esc(s.name)}" data-id="${s.id}" />`;
-    html += `<button class="scheme-save-btn" data-id="${s.id}" style="background:rgba(34,197,94,0.1);border:1px solid #22c55e;color:#22c55e;font-size:11px;padding:2px 8px;border-radius:5px;cursor:pointer;font-weight:600;">💾 保存</button>`;
+    html += `<input class="scheme-name-input" value="${esc(s.name)}" data-id="${s.id}" style="flex:1;min-width:0;" />`;
+    // 模板下拉
+    html += `<select class="template-select" id="templateSelect" title="从模板创建" style="font-size:11px;padding:2px 4px;border-radius:5px;background:rgba(255,255,255,0.06);border:1px solid var(--border);color:var(--muted);cursor:pointer;max-width:70px;"><option value="">模板</option>`;
+    for (const t of SCHEME_TEMPLATES) { html += `<option value="${t.id}">${t.name}</option>`; }
+    html += `</select>`;
+    // 刷新官方模板
+    html += `<button id="loadOfficialTplBtn" onclick="event.preventDefault();loadUserTemplates();" title="刷新官方模板" style="background:none;border:none;color:var(--muted);font-size:13px;padding:2px 4px;cursor:pointer;">↻</button>`;
+    // 保存
+    html += `<button class="scheme-save-btn" data-id="${s.id}" style="background:rgba(34,197,94,0.1);border:1px solid #22c55e;color:#22c55e;font-size:11px;padding:2px 8px;border-radius:5px;cursor:pointer;font-weight:600;display:flex;align-items:center;gap:3px;">${svgIcon('save', 12)} 保存</button>`;
+    // 删除（仅多于1个方案时显示）
+    if (schemes.length > 1) {
+      html += `<button class="scheme-delete-btn" data-id="${s.id}" title="删除此方案" style="background:none;border:none;color:var(--muted);font-size:14px;padding:2px 4px;border-radius:4px;cursor:pointer;">${svgIcon('trash', 13)}</button>`;
+    }
     html += `</div>`;
 
     // 按分组渲染条件
@@ -2226,11 +2711,6 @@ function renderSettings() {
       html += `</div></div>`; // close cond-group-body + cond-group
     }
 
-    // 删除按钮放在底部
-    if (schemes.length > 1) {
-      html += `<div class="scheme-delete-bottom"><button class="scheme-delete-btn" data-id="${s.id}">🗑 删除此方案</button></div>`;
-    }
-
     html += `</div>`; // close scheme-card
   }
   html += `</div>`; // close settings-scroll
@@ -2261,14 +2741,18 @@ function renderRightSentiment(data) {
   const indices = data.indices || [];
   const klines = data.sh_klines || [];
   let idxHtml = '';
-  for (const item of indices) {
-    const cls = item.change >= 0 ? 'up' : 'down';
-    const sign = item.change >= 0 ? '+' : '';
-    idxHtml += `<div style="display:flex;align-items:baseline;gap:6px;">
-      <span style="font-size:11px;color:var(--muted);">${esc(item.name)}</span>
-      <span style="font-size:14px;font-weight:800;">${item.price.toFixed(2)}</span>
-      <span style="font-size:11px;font-weight:700;" class="sh-change ${cls}">${sign}${item.change.toFixed(2)}%</span>
-    </div>`;
+  if (indices.length) {
+    idxHtml += `<div style="display:grid;grid-template-columns:repeat(${Math.min(indices.length,3)},1fr);gap:5px;margin-bottom:6px;">`;
+    for (const item of indices) {
+      const sign = item.change >= 0 ? '+' : '';
+      const color = item.change >= 0 ? 'var(--green)' : 'var(--red)';
+      idxHtml += `<div style="background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;padding:6px 8px;min-width:0;">
+        <div style="font-size:10px;color:var(--muted);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(item.name)}</div>
+        <div style="font-size:14px;font-weight:800;letter-spacing:-0.02em;">${item.price.toFixed(2)}</div>
+        <div style="font-size:11px;font-weight:700;color:${color};margin-top:1px;">${sign}${item.change.toFixed(2)}%</div>
+      </div>`;
+    }
+    idxHtml += `</div>`;
   }
 
   if (klines.length >= 20) {
@@ -2324,29 +2808,35 @@ function renderRightSentiment(data) {
     function strengthDots(s) { return '●'.repeat(Math.min(s, 5)) + '○'.repeat(Math.max(0, 5 - Math.min(s, 5))); }
 
     const CN_NUM = ['一','二','三'];
-    idxHtml += `<div style="margin-top:6px;font-size:11px;line-height:1.9;">`;
+    idxHtml += `<div style="display:flex;gap:6px;margin-top:2px;margin-bottom:4px;">`;
+    // 左列：支撑
+    idxHtml += `<div style="flex:1;display:flex;flex-direction:column;gap:3px;">`;
     supports.forEach((s, i) => {
       const str = levelStrength(s, levels, last);
       const sc = strengthColor(str);
-      idxHtml += `<div style="color:#4ade80;display:flex;align-items:center;gap:4px;">
-        <span>向下第${CN_NUM[i]}支撑位</span>
-        <span style="font-weight:600;">${s.val.toFixed(2)}</span>
-        <span style="color:var(--muted);font-size:10px;">(${esc(s.label)})</span>
-        <span style="color:${sc};font-size:9px;letter-spacing:-1px;" title="强度${str}/10">${strengthDots(str)}</span>
-        <span style="color:${sc};font-size:9px;">${str}</span>
+      idxHtml += `<div style="display:flex;align-items:center;gap:3px;font-size:10px;">
+        <span style="color:var(--muted);white-space:nowrap;">支撑${CN_NUM[i]}</span>
+        <span style="font-weight:700;color:#4ade80;">${s.val.toFixed(2)}</span>
+        <span style="color:var(--muted);font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${esc(s.label)}</span>
+        <span style="color:${sc};font-size:9px;flex-shrink:0;">${str}</span>
       </div>`;
     });
+    if (!supports.length) idxHtml += `<div style="font-size:10px;color:var(--muted);">无近位支撑</div>`;
+    idxHtml += `</div>`;
+    // 右列：压力
+    idxHtml += `<div style="flex:1;display:flex;flex-direction:column;gap:3px;">`;
     resists.forEach((r, i) => {
       const str = levelStrength(r, levels, last);
       const sc = strengthColor(str);
-      idxHtml += `<div style="color:#f87171;display:flex;align-items:center;gap:4px;">
-        <span>附近压力位${CN_NUM[i]}</span>
-        <span style="font-weight:600;">${r.val.toFixed(2)}</span>
-        <span style="color:var(--muted);font-size:10px;">(${esc(r.label)})</span>
-        <span style="color:${sc};font-size:9px;letter-spacing:-1px;" title="强度${str}/10">${strengthDots(str)}</span>
-        <span style="color:${sc};font-size:9px;">${str}</span>
+      idxHtml += `<div style="display:flex;align-items:center;gap:3px;font-size:10px;">
+        <span style="color:var(--muted);white-space:nowrap;">压力${CN_NUM[i]}</span>
+        <span style="font-weight:700;color:#f87171;">${r.val.toFixed(2)}</span>
+        <span style="color:var(--muted);font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${esc(r.label)}</span>
+        <span style="color:${sc};font-size:9px;flex-shrink:0;">${str}</span>
       </div>`;
     });
+    if (!resists.length) idxHtml += `<div style="font-size:10px;color:var(--muted);">无近位压力</div>`;
+    idxHtml += `</div>`;
     idxHtml += `</div>`;
 
     // 冰点/情绪高点
@@ -2384,18 +2874,18 @@ function renderRightSentiment(data) {
     const iceLeft = 5 - icepointScore;
     const hotLeft = 5 - hotScore;
     if (icepointScore >= 3) {
-      idxHtml += `<div style="margin-top:5px;padding:4px 8px;background:rgba(99,102,241,0.15);border-left:2px solid #818cf8;border-radius:3px;font-size:10px;color:#a5b4fc;">
+      idxHtml += `<div style="margin-top:4px;padding:4px 8px;background:rgba(99,102,241,0.15);border-left:2px solid #818cf8;border-radius:3px;font-size:10px;color:#a5b4fc;">
         ❄️ 冰点信号 ${icepointScore}/5（还差${iceLeft}分满冰点）：${icepointReasons.join('、')}
       </div>`;
     } else if (hotScore >= 3) {
-      idxHtml += `<div style="margin-top:5px;padding:4px 8px;background:rgba(239,68,68,0.12);border-left:2px solid #ef4444;border-radius:3px;font-size:10px;color:#fca5a5;">
+      idxHtml += `<div style="margin-top:4px;padding:4px 8px;background:rgba(239,68,68,0.12);border-left:2px solid #ef4444;border-radius:3px;font-size:10px;color:#fca5a5;">
         🔥 情绪高点 ${hotScore}/5（还差${hotLeft}分满高点）：${hotReasons.join('、')}
       </div>`;
     } else {
       if (icepointScore >= hotScore) {
-        idxHtml += `<div style="margin-top:5px;font-size:10px;color:var(--muted);">❄️ 距冰点还差 ${iceLeft} 分（当前 ${icepointScore}/5）：${icepointReasons.join('、') || '无明显信号'}</div>`;
+        idxHtml += `<div style="margin-top:4px;font-size:10px;color:var(--muted);">❄️ 距冰点还差 ${iceLeft} 分（当前 ${icepointScore}/5）：${icepointReasons.join('、') || '无明显信号'}</div>`;
       } else {
-        idxHtml += `<div style="margin-top:5px;font-size:10px;color:var(--muted);">🔥 距情绪高点还差 ${hotLeft} 分（当前 ${hotScore}/5）：${hotReasons.join('、') || '无明显信号'}</div>`;
+        idxHtml += `<div style="margin-top:4px;font-size:10px;color:var(--muted);">🔥 距情绪高点还差 ${hotLeft} 分（当前 ${hotScore}/5）：${hotReasons.join('、') || '无明显信号'}</div>`;
       }
     }
   }
@@ -2426,16 +2916,20 @@ function renderRightSentiment(data) {
         <span class="limit-badge down">🟢 跌停 ${limitDown}</span>
         <span style="font-size:10px;color:var(--muted);margin-left:auto;">平盘 ${flat}</span>
       </div>
-      <div style="margin-top:6px;">
-        <div class="sentiment-meter">
-          <span class="meter-label">市场情绪</span>
+      <div style="margin-top:6px;display:flex;gap:8px;">
+        <div style="flex:1;display:flex;flex-direction:column;gap:2px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <span style="font-size:10px;color:var(--muted);font-weight:600;">市场情绪</span>
+            <span style="font-size:10px;font-weight:700;color:${meterColor}">${score.toFixed(0)}</span>
+          </div>
           <div class="meter-bar"><div class="meter-fill" style="width:${score.toFixed(0)}%;background:${meterColor}"></div></div>
-          <span class="meter-val" style="color:${meterColor}">${score.toFixed(0)}</span>
         </div>
-        <div class="sentiment-meter">
-          <span class="meter-label">涨停比</span>
+        <div style="flex:1;display:flex;flex-direction:column;gap:2px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <span style="font-size:10px;color:var(--muted);font-weight:600;">涨停比</span>
+            <span style="font-size:10px;font-weight:700;color:#fca5a5">${limitUp}/${limitUp+limitDown}</span>
+          </div>
           <div class="meter-bar"><div class="meter-fill" style="width:${limitRatio.toFixed(0)}%;background:#ef4444"></div></div>
-          <span class="meter-val" style="color:#fca5a5">${limitUp}/${limitUp+limitDown}</span>
         </div>
       </div>`;
   }
@@ -2480,7 +2974,7 @@ function renderRightSentiment(data) {
       <button class="header-btn" id="sentimentRefreshBtn" title="刷新情绪数据" style="width:22px;height:22px;font-size:11px;">↻</button>
     </div>
     <div class="sent-section">
-      <div class="sent-section-title" style="display:flex;align-items:center;">📈 沪深指数${srcTag(indexSrc, updatedAt)}</div>
+      <div class="sent-section-title" style="display:flex;align-items:center;">沪深指数${srcTag(indexSrc, updatedAt)}</div>
       ${idxHtml || '<div style="color:var(--muted);font-size:10px;">获取失败（TDX 未连接且东财 fallback 异常）</div>'}
     </div>
     <div class="sent-section">
@@ -2540,7 +3034,7 @@ function bindSettingsEvents() {
       saveSchemes();
       btn.textContent = '✅ 已保存';
       btn.style.background = 'rgba(34,197,94,0.2)';
-      setTimeout(() => { btn.textContent = '💾 保存'; btn.style.background = 'rgba(34,197,94,0.1)'; }, 1200);
+      setTimeout(() => { btn.innerHTML = `${svgIcon('save', 12)} 保存`; btn.style.background = 'rgba(34,197,94,0.1)'; }, 1200);
     });
   });
   settingsPanel.querySelectorAll('.scheme-name-input').forEach(inp => {
@@ -2572,7 +3066,7 @@ function bindSettingsEvents() {
         btn.style.borderColor = '#ef4444';
         setTimeout(() => {
           btn.dataset.confirming = '';
-          btn.textContent = '🗑 删除此方案';
+          btn.innerHTML = svgIcon('trash', 13) + ' 删除此方案';
           btn.style.color = '';
           btn.style.borderColor = '';
         }, 3000);
@@ -2742,7 +3236,7 @@ function bindSettingsEvents() {
   // ── Tab 栏 + 新建策略 ──
   settingsPanel.querySelector('.scheme-tab-add')?.addEventListener('click', () => {
     const newScheme = { id: 'scheme_' + Date.now(), name: `方案${schemes.length + 1}`, enabled: true,
-      conditions: { marketCap:{enabled:false,min:20,max:200}, bigOrder:{enabled:false,ratio:0.1}, amountHigh:{enabled:false,days:5}, amountLow:{enabled:false,days:5}, limitUp:{enabled:false}, limitDown:{enabled:false}, shortRise:{enabled:false,seconds:60,percent:3}, breakMinMA:{enabled:false,minutes:5}, breakDayMA:{enabled:false,period:5}, breakGolden:{enabled:false,days:20,ratio:0.382}, amountMultiple:{enabled:false,multiple:2}, volumeRatio:{enabled:false,min:2}, bollingerUp:{enabled:false,rules:[{band:'upper',period:'20d'}]}, bollingerDown:{enabled:false,rules:[{band:'lower',period:'20d'}]}, cupHandle:{enabled:false,days:20,dayA:5,dayB:10,minPct:10,maxPct:30}, priceCompare:{enabled:false,rules:[{dayL:1,fieldL:'close',op:'gt',dayR:2,fieldR:'close'}]}, amountCompare:{enabled:false,rules:[{dayL:1,op:'gt',dayR:2}]} }
+      conditions: { marketCap:{enabled:false,min:20,max:200}, bigOrder:{enabled:false,ratio:0.1}, amountHigh:{enabled:false,days:5}, amountLow:{enabled:false,days:5}, limitUp:{enabled:false}, limitDown:{enabled:false}, shortRise:{enabled:false,seconds:60,percent:3}, breakMinMA:{enabled:false,minutes:5}, breakDayMA:{enabled:false,period:5}, breakGolden:{enabled:false,days:20,ratio:0.382,mode:'cross'}, amountMultiple:{enabled:false,multiple:2}, volumeRatio:{enabled:false,min:2}, bollingerUp:{enabled:false,rules:[{band:'upper',period:'20d'}]}, bollingerDown:{enabled:false,rules:[{band:'lower',period:'20d'}]}, cupHandle:{enabled:false,days:20,dayA:5,dayB:10,minPct:10,maxPct:30}, priceCompare:{enabled:false,rules:[{dayL:1,fieldL:'close',op:'gt',dayR:2,fieldR:'close'}]}, amountCompare:{enabled:false,rules:[{dayL:1,op:'gt',dayR:2}]} }
     };
     schemes.push(newScheme);
     activeSchemeTab = newScheme.id;
@@ -2791,31 +3285,25 @@ function handleAuthResult(d) {
   const errorEl = document.getElementById('authError');
   if (d.success) {
     authUser = d.user;
+    if (d.user) localStorage.setItem('stock-radar-auth-user', JSON.stringify(d.user));
     if (d.token) {
       authToken = d.token;
       localStorage.setItem('stock-radar-auth-token', d.token);
     }
-    // 合并服务端数据
-    if (d.saved_watchlist && d.saved_watchlist.length) {
-      watchlist = [...new Set([...watchlist, ...d.saved_watchlist])];
+    // 云端数据同步：以云端为权威来源（每次本地操作都会立即推云端，云端始终是最新的）
+    if (d.saved_watchlist !== undefined && d.saved_watchlist !== null) {
+      watchlist = d.saved_watchlist; // 云端直接覆盖，不合并
+      localStorage.setItem('stock-radar-watchlist', JSON.stringify(watchlist));
     }
-    // 始终同步本地数据到服务端
-    if (watchlist.length) saveWatchlist();
-    if (d.saved_schemes) {
-      // 合并：服务端为主，补充本地新增的（未同步的）方案
-      const cloudIds = new Set(d.saved_schemes.map(s => s.id));
-      const localOnly = schemes.filter(s => !cloudIds.has(s.id));
-      schemes = [...d.saved_schemes, ...localOnly];
+    if (d.saved_schemes && d.saved_schemes.length > 0) {
+      schemes = d.saved_schemes; // 云端直接覆盖，不合并
       localStorage.setItem('stock-radar-schemes', JSON.stringify(schemes));
       renderSchemeBar();
       renderList();
-      // 若有本地未同步的方案，上传到服务端
-      if (localOnly.length && ws && ws.readyState === WebSocket.OPEN) {
+    } else if (d.saved_schemes !== undefined) {
+      // 云端无方案（首次注册），把本地推上去
+      if (ws && ws.readyState === WebSocket.OPEN)
         ws.send(JSON.stringify({ action: 'sync_schemes', schemes }));
-      }
-    } else if (schemes.length) {
-      // 服务端无方案，同步本地方案上去
-      if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ action: 'sync_schemes', schemes }));
     }
     updateAuthUI();
     document.getElementById('authOverlay').style.display = 'none';
@@ -2824,7 +3312,9 @@ function handleAuthResult(d) {
     // token 过期时清除并重新弹出登录
     if (d.error && d.error.includes('过期')) {
       authToken = null;
+      authUser = null;
       localStorage.removeItem('stock-radar-auth-token');
+      localStorage.removeItem('stock-radar-auth-user');
       showAuthModal();
     }
   }
@@ -2914,6 +3404,7 @@ document.getElementById('authLogoutBtn')?.addEventListener('click', () => {
   authUser = null;
   authToken = null;
   localStorage.removeItem('stock-radar-auth-token');
+  localStorage.removeItem('stock-radar-auth-user');
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ action: 'logout' }));
   }
@@ -2942,6 +3433,17 @@ document.getElementById('adminCloseBtn')?.addEventListener('click', () => {
   document.getElementById('adminPanel').style.display = 'none';
 });
 
+document.getElementById('adminRefreshBtn')?.addEventListener('click', () => {
+  const btn = document.getElementById('adminRefreshBtn');
+  btn.style.transition = 'transform 0.5s ease';
+  btn.style.transform = 'rotate(360deg)';
+  setTimeout(() => { btn.style.transform = ''; btn.style.transition = ''; }, 500);
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ action: 'admin_get_users' }));
+    document.getElementById('adminTabUsers').textContent = '加载中…';
+  }
+});
+
 // Tab 切换
 document.getElementById('adminTabs')?.addEventListener('click', (e) => {
   const btn = e.target.closest('.chart-mode-btn');
@@ -2951,6 +3453,8 @@ document.getElementById('adminTabs')?.addEventListener('click', (e) => {
   btn.classList.add('active');
   document.getElementById('adminTabUsers').style.display = tab === 'users' ? '' : 'none';
   document.getElementById('adminTabSectors').style.display = tab === 'sectors' ? '' : 'none';
+  document.getElementById('adminTabTemplates').style.display = tab === 'templates' ? '' : 'none';
+  if (tab === 'templates') loadAdminTemplates();
 });
 
 function renderAdminPanel(users) {
@@ -3129,6 +3633,270 @@ function renderAdminPanel(users) {
   statusDiv.id = 'adminSectorStatus';
   statusDiv.style.cssText = 'margin-top:6px;font-size:10px;color:var(--muted);';
   sectorsEl.appendChild(statusDiv);
+}
+
+// ── 策略模板：全局状态 ──
+let _templatesTarget = null; // 'admin' 或 'user'
+let _adminTemplates = [];    // 管理员本地缓存的模板列表
+
+// 管理员：加载模板（发送请求）
+function loadAdminTemplates() {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    _templatesTarget = 'admin';
+    document.getElementById('adminTabTemplates').textContent = '加载中…';
+    ws.send(JSON.stringify({ action: 'get_scheme_templates' }));
+  }
+}
+
+// 管理员：渲染策略模板面板
+function renderAdminTemplatesPanel(templates) {
+  _adminTemplates = templates;
+  const el = document.getElementById('adminTabTemplates');
+  while (el.firstChild) el.removeChild(el.firstChild);
+
+  // 顶部操作栏
+  const bar = document.createElement('div');
+  bar.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;';
+  const barTitle = document.createElement('span');
+  barTitle.style.cssText = 'font-weight:700;font-size:12px;';
+  barTitle.textContent = '策略模板 (' + templates.length + ')';
+  const addBtn = document.createElement('button');
+  addBtn.id = 'adminAddTemplateBtn';
+  addBtn.style.cssText = 'background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.35);color:#818cf8;border-radius:6px;padding:3px 10px;cursor:pointer;font-size:11px;font-weight:600;';
+  addBtn.textContent = '＋ 新建模板';
+  bar.appendChild(barTitle);
+  bar.appendChild(addBtn);
+  el.appendChild(bar);
+
+  // 表单区（新建/编辑，默认隐藏）
+  const formDiv = document.createElement('div');
+  formDiv.id = 'adminTemplateForm';
+  formDiv.style.cssText = 'display:none;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;';
+
+  const row1 = document.createElement('div');
+  row1.style.cssText = 'display:flex;gap:6px;margin-bottom:6px;';
+  const tplNameInput = document.createElement('input');
+  tplNameInput.id = 'tplName'; tplNameInput.placeholder = '模板名称';
+  tplNameInput.style.cssText = 'flex:1;background:rgba(255,255,255,0.06);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:4px 8px;font-size:11px;';
+  const tplAuthorInput = document.createElement('input');
+  tplAuthorInput.id = 'tplAuthor'; tplAuthorInput.placeholder = '作者';
+  tplAuthorInput.style.cssText = 'width:90px;background:rgba(255,255,255,0.06);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:4px 8px;font-size:11px;';
+  row1.appendChild(tplNameInput); row1.appendChild(tplAuthorInput);
+  formDiv.appendChild(row1);
+
+  const tplDescInput = document.createElement('input');
+  tplDescInput.id = 'tplDesc'; tplDescInput.placeholder = '简短描述（选填）';
+  tplDescInput.style.cssText = 'width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:4px 8px;font-size:11px;margin-bottom:8px;';
+  formDiv.appendChild(tplDescInput);
+
+  const condEditor = document.createElement('div');
+  condEditor.id = 'tplCondEditor';
+  condEditor.style.marginBottom = '8px';
+  formDiv.appendChild(condEditor);
+
+  const btnRow = document.createElement('div');
+  btnRow.style.cssText = 'display:flex;gap:6px;justify-content:flex-end;';
+  const cancelBtn = document.createElement('button');
+  cancelBtn.id = 'tplCancelBtn';
+  cancelBtn.style.cssText = 'background:none;border:1px solid var(--border);color:var(--muted);border-radius:5px;padding:3px 10px;cursor:pointer;font-size:11px;';
+  cancelBtn.textContent = '取消';
+  const saveBtn = document.createElement('button');
+  saveBtn.id = 'tplSaveBtn';
+  saveBtn.style.cssText = 'background:rgba(34,197,94,0.1);border:1px solid #22c55e;color:#22c55e;border-radius:5px;padding:3px 10px;cursor:pointer;font-size:11px;font-weight:600;';
+  saveBtn.textContent = '保存';
+  btnRow.appendChild(cancelBtn); btnRow.appendChild(saveBtn);
+  formDiv.appendChild(btnRow);
+  el.appendChild(formDiv);
+
+  // 模板列表表格
+  const table = document.createElement('table');
+  table.style.cssText = 'width:100%;border-collapse:collapse;';
+  const thead = document.createElement('thead');
+  const headRow = document.createElement('tr');
+  headRow.style.cssText = 'color:var(--muted);border-bottom:1px solid var(--border);';
+  ['名称','作者','描述',''].forEach(t => {
+    const th = document.createElement('th');
+    th.style.cssText = 'text-align:left;padding:4px 6px;font-weight:600;';
+    th.textContent = t;
+    headRow.appendChild(th);
+  });
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  if (!templates.length) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 4;
+    td.style.cssText = 'color:var(--muted);padding:12px 6px;text-align:center;';
+    td.textContent = '暂无模板';
+    tr.appendChild(td); tbody.appendChild(tr);
+  }
+  for (const t of templates) {
+    const tr = document.createElement('tr');
+    tr.style.borderBottom = '1px solid rgba(255,255,255,0.04)';
+    const tdName = document.createElement('td');
+    tdName.style.cssText = 'padding:5px 6px;font-weight:600;';
+    tdName.textContent = t.name;
+    const tdAuthor = document.createElement('td');
+    tdAuthor.style.cssText = 'padding:5px 6px;color:var(--muted);';
+    tdAuthor.textContent = t.author || '—';
+    const tdDesc = document.createElement('td');
+    tdDesc.style.cssText = 'padding:5px 6px;color:var(--muted);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+    tdDesc.textContent = t.description || '';
+    const tdAct = document.createElement('td');
+    tdAct.style.cssText = 'padding:5px 6px;text-align:right;white-space:nowrap;';
+    const editBtn = document.createElement('button');
+    editBtn.dataset.edit = t.id;
+    editBtn.style.cssText = 'background:none;border:1px solid var(--border);color:var(--muted);border-radius:4px;padding:2px 7px;cursor:pointer;font-size:10px;margin-right:4px;';
+    editBtn.textContent = '编辑';
+    const delBtn = document.createElement('button');
+    delBtn.dataset.del = t.id;
+    delBtn.style.cssText = 'background:none;border:1px solid rgba(239,68,68,0.3);color:#f87171;border-radius:4px;padding:2px 7px;cursor:pointer;font-size:10px;';
+    delBtn.textContent = '删除';
+    tdAct.appendChild(editBtn); tdAct.appendChild(delBtn);
+    tr.appendChild(tdName); tr.appendChild(tdAuthor); tr.appendChild(tdDesc); tr.appendChild(tdAct);
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  el.appendChild(table);
+
+  // 当前编辑的模板 ID（新建时为 null）
+  let _editingTplId = null;
+  let _editingConditions = {};
+
+  function openForm(tpl) {
+    _editingTplId = tpl ? tpl.id : null;
+    _editingConditions = tpl ? JSON.parse(JSON.stringify(tpl.conditions_json || {})) : {};
+    document.getElementById('tplName').value = tpl ? tpl.name : '';
+    document.getElementById('tplAuthor').value = tpl ? (tpl.author || '') : '';
+    document.getElementById('tplDesc').value = tpl ? (tpl.description || '') : '';
+    const condEl = document.getElementById('tplCondEditor');
+    while (condEl.firstChild) condEl.removeChild(condEl.firstChild);
+    for (const group of CONDITION_GROUPS) {
+      const groupDefs = group.keys.map(k => CONDITION_DEFS.find(d => d.key === k)).filter(Boolean);
+      const groupDiv = document.createElement('div');
+      groupDiv.style.cssText = 'margin-bottom:6px;';
+      const groupLabel = document.createElement('div');
+      groupLabel.style.cssText = 'font-size:10px;color:var(--muted);margin-bottom:3px;';
+      groupLabel.textContent = group.label;
+      groupDiv.appendChild(groupLabel);
+      for (const def of groupDefs) {
+        const cond = _editingConditions[def.key] || { enabled: false };
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:2px 0;';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = !!cond.enabled;
+        cb.style.accentColor = 'var(--accent)';
+        cb.addEventListener('change', () => {
+          if (!_editingConditions[def.key]) _editingConditions[def.key] = {};
+          _editingConditions[def.key].enabled = cb.checked;
+        });
+        const lbl = document.createElement('span');
+        lbl.style.cssText = 'font-size:11px;color:var(--text);';
+        lbl.textContent = def.label;
+        row.appendChild(cb); row.appendChild(lbl);
+        groupDiv.appendChild(row);
+      }
+      condEl.appendChild(groupDiv);
+    }
+    formDiv.style.display = '';
+    table.style.display = 'none';
+    addBtn.style.display = 'none';
+  }
+
+  addBtn.addEventListener('click', () => openForm(null));
+  cancelBtn.addEventListener('click', () => {
+    formDiv.style.display = 'none';
+    table.style.display = '';
+    addBtn.style.display = '';
+  });
+  saveBtn.addEventListener('click', () => {
+    const name = document.getElementById('tplName').value.trim();
+    if (!name) { alert('请输入模板名称'); return; }
+    const tpl = {
+      name,
+      author: document.getElementById('tplAuthor').value.trim(),
+      description: document.getElementById('tplDesc').value.trim(),
+      conditions_json: _editingConditions,
+    };
+    if (_editingTplId) tpl.id = _editingTplId;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ action: 'admin_save_template', template: tpl }));
+    }
+    formDiv.style.display = 'none';
+    table.style.display = '';
+    addBtn.style.display = '';
+  });
+
+  tbody.addEventListener('click', (e) => {
+    const editId = e.target.dataset.edit;
+    const delId = e.target.dataset.del;
+    if (editId) {
+      const tpl = _adminTemplates.find(t => t.id === editId);
+      if (tpl) openForm(tpl);
+    }
+    if (delId) {
+      if (!confirm('确认删除此模板？')) return;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ action: 'admin_delete_template', template_id: delId }));
+      }
+    }
+  });
+}
+
+// ── 策略模板：用户侧 ──
+
+// 用户侧：加载官方模板列表
+function loadUserTemplates() {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    _templatesTarget = 'user';
+    ws.send(JSON.stringify({ action: 'get_scheme_templates' }));
+  }
+}
+
+// 用户侧：渲染官方模板卡片列表（插入到 officialTemplateList 容器）
+function renderUserTemplateList(templates) {
+  const el = document.getElementById('officialTemplateList');
+  if (!el) return;
+  while (el.firstChild) el.removeChild(el.firstChild);
+  if (!templates.length) {
+    const msg = document.createElement('div');
+    msg.style.cssText = 'color:var(--muted);font-size:11px;padding:8px 0;';
+    msg.textContent = '暂无官方模板';
+    el.appendChild(msg);
+    return;
+  }
+  for (const t of templates) {
+    const card = document.createElement('div');
+    card.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:6px 8px;border:1px solid var(--border);border-radius:6px;margin-bottom:5px;';
+    const info = document.createElement('div');
+    const infoTitle = document.createElement('div');
+    infoTitle.style.cssText = 'font-size:11px;font-weight:600;color:var(--text);';
+    infoTitle.textContent = t.name;
+    const infoSub = document.createElement('div');
+    infoSub.style.cssText = 'font-size:10px;color:var(--muted);';
+    infoSub.textContent = '作者：' + (t.author || '—') + (t.description ? '  ' + t.description : '');
+    info.appendChild(infoTitle); info.appendChild(infoSub);
+    const importBtn = document.createElement('button');
+    importBtn.style.cssText = 'background:rgba(34,197,94,0.1);border:1px solid #22c55e;color:#22c55e;border-radius:5px;padding:2px 8px;cursor:pointer;font-size:10px;font-weight:600;white-space:nowrap;';
+    importBtn.textContent = '添加到我的方案';
+    importBtn.addEventListener('click', () => {
+      const newScheme = {
+        id: 'scheme_' + Date.now(),
+        name: t.name,
+        enabled: false,
+        conditions: t.conditions_json || {},
+      };
+      schemes.push(newScheme);
+      activeSchemeTab = newScheme.id;
+      saveSchemes();
+      renderSettings();
+    });
+    card.appendChild(info); card.appendChild(importBtn);
+    el.appendChild(card);
+  }
 }
 
 // 渲染只读方案详情（复用方案编辑器组件）

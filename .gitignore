@@ -19,6 +19,11 @@ dist/
 
 # 数据库（本地运行时数据）
 stockradar.db
+klines.db
+
+# 日志
+server.log
+*.log
 
 # 截图 / 调试图片
 *.png
