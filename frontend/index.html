@@ -788,7 +788,7 @@
       <div class="header-actions">
         <span id="authUserLabel" style="font-size:10px;color:var(--accent);display:none;align-self:center;cursor:pointer;" title="点击管理"></span>
         <button class="header-btn" id="authBtn" title="登录" style="width:24px;height:24px;font-size:12px;">👤</button>
-        <span style="font-size:9px;color:var(--muted);opacity:0.6;align-self:center;">v1.7.0</span>
+        <span id="appVersion" style="font-size:9px;color:var(--muted);opacity:0.6;align-self:center;">v1.8.0</span>
       </div>
     </div>
     <div class="left-column">
@@ -934,11 +934,11 @@
           <span style="font-size:9px;color:var(--muted);white-space:nowrap;">K线加载中</span>
         </div>
         <button class="header-btn" id="adminHeaderBtn" title="管理后台" style="display:none;font-size:13px;">🛠</button>
-        <button class="header-btn" id="configBtn" title="项目设置" style="font-size:14px;">⚙</button>
+        <button class="header-btn" id="configBtn" title="项目设置" style="font-size:14px;position:relative;">⚙<span id="updateBadge" style="display:none;position:absolute;top:1px;right:1px;width:6px;height:6px;background:#ff6b6b;border-radius:50%;pointer-events:none;"></span></button>
       </div>
     </div>
     <div class="config-modal" id="configModal">
-      <div class="config-modal-title">项目设置</div>
+      <div class="config-modal-title" style="display:flex;justify-content:space-between;align-items:center;">项目设置<span id="updateHint" style="display:none;font-size:10px;color:#ff6b6b;cursor:pointer;font-weight:normal;"></span></div>
       <div class="config-tab-bar" id="configTabBar">
         <button class="config-tab active" data-tab="settings">设置</button>
         <button class="config-tab" data-tab="monitor">数据监控</button>
@@ -2218,10 +2218,33 @@ function connectWS() {
   };
   ws.onmessage = e => { try { const d = JSON.parse(e.data);
     if (d.type==='init') { const incoming=d.alerts||[]; if(incoming.length>0||!alerts.length){ alerts=incoming; for(const a of alerts){if(a.klines&&a.klines.length)klinesMap[a.id]=a.klines;} try{localStorage.setItem('stock-radar-alerts',JSON.stringify(alerts.slice(0,50).map(({klines,...r})=>r)));}catch(e){} try{localStorage.setItem('stock-radar-alerts-ts',Date.now());}catch(e){} } if(d.market)updateMarketLabel(d.market); if(d.sources)updateSourceDots(d.sources); if(d.stocks_all) allStocks=d.stocks_all; renderList(); if(!kvCurrentCode && d.sh_klines && d.sh_klines.length){ kvStockName.textContent='上证指数'; kvStockCode.textContent=''; kvStockChange.textContent=''; kvEmpty.style.display='none'; kvCanvas.style.display='block'; kvLastKlines=d.sh_klines; drawKlineViewer(d.sh_klines); } if(d.kline_loading && d.kline_loading.status==='start'){const dot=document.getElementById('klinesLoadingDot');if(dot){dot.style.display='flex';dot.title=`正在从通达信补充 ${d.kline_loading.total} 只股票的最新K线，请稍候…`;}} }
+    if (d.type==='init') {
+      const appVer = d.app_version || 'v1.8.0';
+      const verEl = document.getElementById('appVersion');
+      if (verEl) verEl.textContent = appVer;
+      if (d.latest_version && d.latest_version !== appVer) {
+        const parseVer = v => v.replace(/^v/, '').split('.').map(Number);
+        const [ma, mi, pa] = parseVer(d.latest_version);
+        const [ca, ci, cp] = parseVer(appVer);
+        const isNewer = ma > ca || (ma === ca && mi > ci) || (ma === ca && mi === ci && pa > cp);
+        if (isNewer) {
+          if (verEl) verEl.style.color = '#ff6b6b';
+          const badge = document.getElementById('updateBadge');
+          if (badge) badge.style.display = 'block';
+          const hint = document.getElementById('updateHint');
+          if (hint) {
+            hint.textContent = appVer + ' → ' + d.latest_version + ' ↗';
+            hint.style.display = 'inline';
+            hint.onclick = () => ws && ws.readyState === WebSocket.OPEN &&
+              ws.send(JSON.stringify({ action: 'open_url', url: d.latest_release_url }));
+          }
+        }
+      }
+    }
     if (d.type==='alerts') { const items=d.items||[],ids=items.map(i=>i.id); for(const a of items){if(a.klines&&a.klines.length)klinesMap[a.id]=a.klines;} const existingCodes=new Set(alerts.map(a=>a.code)); const hasNew=items.some(a=>!existingCodes.has(a.code)); const am=new Map(alerts.map(a=>[a.code,a])); for(const a of items){const old=am.get(a.code);if(old&&old.matched_schemes)a.matched_schemes=old.matched_schemes;am.set(a.code,a);} alerts=[...am.values()].sort((a,b)=>b.timestamp-a.timestamp).slice(0,200); if(currentMode!=='search'&&hasNew){renderList(ids);alertList.scrollTop=0;} try{localStorage.setItem('stock-radar-alerts',JSON.stringify(alerts.slice(0,50).map(({klines,...r})=>r)));}catch(e){} }
     if (d.type==='market') updateMarketLabel(d.state);
     if (d.type==='sentiment') { sentimentData = d.data; if(d.data.sources)updateSourceDots(d.data.sources); renderRightSentiment(d.data); try{localStorage.setItem('stock-radar-sentiment',JSON.stringify(d.data));}catch(e){} if(!kvCurrentCode && d.data.sh_klines && d.data.sh_klines.length) { kvStockName.textContent='上证指数'; kvStockCode.textContent='000001.SH'; kvStockChange.textContent=''; kvEmpty.style.display='none'; kvCanvas.style.display='block'; kvLastKlines=d.data.sh_klines; drawKlineViewer(d.data.sh_klines); } else if(!kvCurrentCode) { kvEmpty.textContent='大盘数据加载中…'; } }
-    if (d.type==='screen_results') { _schemeScreened=true; _screenDataDate=d.data_date||''; _screenIsRealtime=d.is_realtime!==false; const sa=d.alerts||[]; if(sa.length>0){alerts=sa;}else{alerts=alerts.map(({matched_schemes,...rest})=>rest);} if(currentMode!=='search') renderList(); }
+    if (d.type==='screen_results') { _schemeScreened=true; _screenDataDate=d.data_date||''; _screenIsRealtime=d.is_realtime!==false; const sa=d.alerts||[]; if(sa.length>0){alerts=sa;}else if(alerts.length){alerts=alerts.map(({matched_schemes,...rest})=>rest);} if(currentMode!=='search') renderList(); }
     if (d.type==='klines') { kvLastKlines = d.data; if(kvCurrentCode && d.data && d.data.length) kvKlinesCache[kvCurrentCode+'_'+kvPeriod]=d.data; drawKlineViewer(d.data); }
     if (d.type==='watchlist_results') {
       const results = d.results || [];
@@ -3262,14 +3285,20 @@ function handleAuthResult(d, isActiveLogin = false) {
       }
       localStorage.setItem('stock-radar-watchlist', JSON.stringify(watchlist));
     }
-    // 方案：主动登录时云端覆盖；token续登时以本地为准，并将本地推送到服务端
+    // 方案：主动登录时以本地为准并推送到云端；token续登时以本地为准，并将本地推送到服务端
     if (d.saved_schemes !== undefined) {
       if (isActiveLogin && d.saved_schemes && d.saved_schemes.length > 0) {
-        // 主动登录：云端覆盖本地
-        schemes = d.saved_schemes;
-        localStorage.setItem('stock-radar-schemes', JSON.stringify(schemes));
-        renderSchemeBar();
-        renderList();
+        if (schemes && schemes.length > 0) {
+          // 本地有方案：以本地为准，把本地推送到云端（修复云端旧数据）
+          if (ws && ws.readyState === WebSocket.OPEN)
+            ws.send(JSON.stringify({ action: 'sync_schemes', schemes }));
+        } else {
+          // 本地无方案：云端覆盖（首次登录或本地清空）
+          schemes = d.saved_schemes;
+          localStorage.setItem('stock-radar-schemes', JSON.stringify(schemes));
+          renderSchemeBar();
+          renderList();
+        }
       } else if (!isActiveLogin) {
         // token续登（刷新页面）：本地为准，推送本地到服务端确保同步
         localStorage.setItem('stock-radar-schemes', JSON.stringify(schemes));
