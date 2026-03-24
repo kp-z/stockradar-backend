@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>StockRadar · 异动雷达</title>
+  <link rel="icon" type="image/png" href="favicon.png" />
+  <link rel="apple-touch-icon" href="favicon.png" />
+  <meta name="theme-color" content="#0f1117" />
   <style>
     :root {
       --bg: rgba(15, 17, 23, 0.92);
@@ -351,6 +354,7 @@
       border-left: 1px solid var(--border);
       display: flex; flex-direction: column;
       overflow: hidden;
+      height: 100%;
     }
     .right-panel::-webkit-scrollbar { width: 3px; }
     .right-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
@@ -358,8 +362,9 @@
     /* K线观察框（右侧上半） */
     .kline-viewer {
       width: 100%;
-      min-height: 260px;
-      flex: 1 1 0;
+      min-height: 0;
+      flex: 6 1 0;
+      overflow: hidden;
       background: var(--bg);
       display: flex; flex-direction: column;
     }
@@ -401,8 +406,8 @@
     .kv-period-btn:hover { border-color: rgba(255,255,255,0.15); color: var(--text); }
     .kv-period-btn.active { background: var(--accent); border-color: var(--accent); color: white; }
     .kline-viewer-body {
-      flex: 1; position: relative; overflow: visible;
-      min-height: 200px; display: flex; flex-direction: column;
+      flex: 1; position: relative; overflow: hidden;
+      min-height: 0; display: flex; flex-direction: column;
     }
     .kv-tag-btn {
       padding: 2px 7px; border-radius: 4px; font-size: 10px;
@@ -441,8 +446,8 @@
       padding: 6px 8px;
       display: flex; flex-direction: column; gap: 6px;
       border-top: 1px solid var(--border);
-      flex-shrink: 0;
-      max-height: 40%;
+      flex: 4 0 0;
+      min-height: 0;
       overflow-y: auto;
     }
 
@@ -478,15 +483,6 @@
     .source-dot-circle.ok { background: #22c55e; animation: pulse 2s infinite; }
     .source-dot-circle.err { background: #ef4444; }
     .source-dot-label { font-size: 9px; color: var(--muted); line-height: 1; }
-
-    .opacity-slider {
-      width: 50px; height: 3px; -webkit-appearance: none; appearance: none;
-      background: rgba(255,255,255,0.1); border-radius: 3px; outline: none;
-    }
-    .opacity-slider::-webkit-slider-thumb {
-      -webkit-appearance: none; width: 10px; height: 10px;
-      border-radius: 50%; background: var(--accent); cursor: pointer;
-    }
 
     /* ── 配置弹窗 ── */
     .config-modal {
@@ -907,6 +903,7 @@
         <span id="refreshStatus">等待连接</span>
         <span id="headerClock" style="font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums;"></span>
         <span id="headerCountdown" style="font-size:10px;color:var(--orange);font-variant-numeric:tabular-nums;"></span>
+        <span id="dataDateHint" style="display:none;font-size:9px;color:var(--muted);"></span>
         <div class="source-indicators" id="sourceIndicators">
           <div class="source-dot" title="通达信">
             <div class="source-dot-circle" id="srcTdx"></div>
@@ -937,7 +934,6 @@
           </svg>
           <span style="font-size:9px;color:var(--muted);white-space:nowrap;">K线加载中</span>
         </div>
-        <input type="range" class="opacity-slider" id="opacitySlider" min="30" max="100" value="92" />
         <button class="header-btn" id="configBtn" title="项目设置" style="font-size:14px;">⚙</button>
       </div>
     </div>
@@ -1166,7 +1162,6 @@ const minimizeBtn   = document.getElementById('minimizeBtn');
 const configBtn     = document.getElementById('configBtn');
 const configModal   = document.getElementById('configModal');
 const closeBtn      = document.getElementById('closeBtn');
-const opacitySlider = document.getElementById('opacitySlider');
 const modeStock      = document.getElementById('modeStock');
 const modeWatchlist  = document.getElementById('modeWatchlist');
 const hotPanel       = document.getElementById('hotPanel');
@@ -1565,7 +1560,6 @@ pinBtn?.addEventListener('click', () => { isPinned=!isPinned; pinBtn.classList.t
 pinBtn?.classList.add('pinned');
 minimizeBtn?.addEventListener('click', () => window.radarAPI?.minimize?.());
 closeBtn?.addEventListener('click', () => window.radarAPI?.close?.());
-opacitySlider?.addEventListener('input', e => { const v=Number(e.target.value)/100; document.body.style.opacity=v; window.radarAPI?.setOpacity?.(v); });
 
 /* ── K线观察框 ── */
 let kvCurrentCode = '';
@@ -2024,12 +2018,25 @@ alertList.addEventListener('click', (e) => {
   const card = e.target.closest('.alert-card');
   if (!card) return;
   const id = card.dataset.id;
-  // watchlist 模式下点击跳转K线
+  const code = id ? id.split('-')[0] : '';
+  if (!code) return;
+  // watchlist 模式
   if (currentMode === 'watchlist') {
-    const r = watchlistResults.find(x => x.code === card.dataset.code);
+    const r = watchlistResults.find(x => x.code === code);
     if (r) selectStock(r.code, r.name, r.change);
+    else { const s = allStocks.find(x => x.code === code); if (s) selectStock(code, s.name, 0); }
     return;
   }
+  // search 模式
+  if (currentMode === 'search') {
+    const nameEl = card.querySelector('.stock-name');
+    const name = nameEl ? nameEl.textContent : code;
+    const changeEl = card.querySelector('.change');
+    const change = changeEl ? parseFloat(changeEl.textContent) || 0 : 0;
+    selectStock(code, name, change);
+    return;
+  }
+  // stock 模式
   const allAlerts = alerts;
   const alert = allAlerts.find(a => a.id === id);
   if (alert) {
@@ -2114,16 +2121,6 @@ function renderSearchToAlertList(results) {
     const a = { id: s.code, code: s.code, name: s.name, type: 'volume', change: s.change || 0, speed: 0, amount: 0, time: '', price: s.price || 0, concepts: s.concepts || [], matched_schemes: [] };
     return renderAlert(a, false, enabledNames);
   }).join('');
-  // 绑定点击
-  alertList.querySelectorAll('.alert-card').forEach(card => {
-    const code = card.dataset.id ? card.dataset.id.split('-')[0] : '';
-    const s = results.find(r => r.code === code);
-    if (!s) return;
-    card.style.cursor = 'pointer';
-    card.addEventListener('click', () => {
-      if (window.radarAPI?.openStock) window.radarAPI.openStock(s.code);
-    });
-  });
   // 绑定星号按钮（renderAlert 已生成，只需绑定事件）
   bindStarButtons(alertList);
 }
@@ -2390,14 +2387,6 @@ function renderWatchlistPanel() {
     const a = { id: r.code, code: r.code, name: r.name, type: 'volume', change: r.change || 0, speed: 0, amount: r.amount || 0, time: r.time || '', price: r.price || 0, concepts: r.concepts || [], matched_schemes: r.matched_schemes || [] };
     return renderAlert(a, false, enabledNames);
   }).join('');
-  // 绑定点击
-  alertList.querySelectorAll('.alert-card').forEach(card => {
-    const code = card.dataset.id ? card.dataset.id.split('-')[0] : '';
-    card.style.cursor = 'pointer';
-    card.addEventListener('click', () => {
-      if (code && window.radarAPI?.openStock) window.radarAPI.openStock(code);
-    });
-  });
   // 绑定星号按钮（renderAlert 已生成，只需绑定事件）
   bindStarButtons(alertList);
 }
@@ -2438,10 +2427,12 @@ function renderList(newIds) {
     return;
   }
   const ns = new Set(newIds||[]);
-  const dataHint = (!_screenIsRealtime && _screenDataDate)
-    ? `<div style="font-size:9px;color:var(--muted);padding:3px 10px 2px;text-align:right;">📅 数据截止 ${_screenDataDate}（非实时）</div>`
-    : '';
-  alertList.innerHTML = dataHint + hotHeader + filtered.map(a => renderAlert(a, ns.has(a.id), enabledNames)).join('');
+  const _ddHint = document.getElementById('dataDateHint');
+  if (_ddHint) {
+    if (!_screenIsRealtime && _screenDataDate) { _ddHint.textContent = `📅 ${_screenDataDate}`; _ddHint.title = '选股数据截止日期（非实时）'; _ddHint.style.display = ''; }
+    else { _ddHint.style.display = 'none'; }
+  }
+  alertList.innerHTML = hotHeader + filtered.map(a => renderAlert(a, ns.has(a.id), enabledNames)).join('');
   requestAnimationFrame(drawAllMiniCharts);
   alertList.querySelectorAll('.alert-card').forEach(card => {
     card.addEventListener('click', () => {

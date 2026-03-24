@@ -859,16 +859,19 @@ def check_condition(key, cond, code, klines, q):
             days = int(cond.get('days', 20))
             ratio = float(cond.get('ratio', 0.382))
             mode = cond.get('mode', 'cross')
-            if len(klines) < days:
+            if len(klines) < days + 1:  # 需要 days 根历史 + 今天
                 return False
-            recent = klines[-days:]
-            high = max(k['high'] for k in recent)
-            low = min(k['low'] for k in recent)
+            historical = klines[-days-1:-1]  # 截至昨天（不含今天）的 days 根K线，与券商软件一致
+            high = max(k['high'] for k in historical)
+            low = min(k['low'] for k in historical)
             golden_level = high - (high - low) * ratio
             if mode == 'above':
                 return price >= golden_level
-            else:  # cross
-                return price >= golden_level and closes[-2] < golden_level if len(closes) >= 2 else False
+            else:  # cross：昨天收盘低于回撤线，今天实时价格突破
+                if len(closes) < 2:
+                    return False
+                prev_close = closes[-2]  # 昨日收盘
+                return prev_close < golden_level and price >= golden_level
 
         elif key == 'bollingerUp':
             rules = cond.get('rules', [])
