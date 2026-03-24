@@ -2291,7 +2291,9 @@ async def main():
                     updated_count = 0
                     failed_codes = []
                     print(f"[补充] 开始补充 {len(all_target)} 只股票的最新K线...")
-                    for code, name in all_target:
+                    for i, (code, name) in enumerate(all_target):
+                        if i % 100 == 0:
+                            _kline_loading_state['progress'] = i
                         try:
                             df = client.bars(symbol=code, frequency=9, offset=5)
                             if df is not None and not df.empty:
@@ -2342,7 +2344,9 @@ async def main():
                     print("[补充] 通达信不可用，使用 akshare/腾讯 补充全市场K线...")
                     if KLINES_DB_LOADED and _feed_fetch_historical:
                         updated = 0
-                        for code, name in all_target:
+                        for i, (code, name) in enumerate(all_target):
+                            if i % 100 == 0:
+                                _kline_loading_state['progress'] = i
                             try:
                                 klines = _feed_fetch_historical(code, 5)
                                 if klines:
@@ -2369,7 +2373,19 @@ async def main():
                         print("[补充] 使用本地缓存数据")
             except Exception as e:
                 print(f"[补充] 补充K线失败: {e}")
+        # 进度广播协程：每秒读取 _kline_loading_state['progress'] 并推送给前端
+        async def _progress_broadcaster():
+            while _kline_loading_state.get('status') == 'start':
+                await asyncio.sleep(1)
+                if _kline_loading_state.get('status') == 'start':
+                    await broadcast({'type': 'kline_loading', 'status': 'progress',
+                                     'done': _kline_loading_state.get('progress', 0),
+                                     'total': _kline_loading_state.get('total', 0),
+                                     'source': _kline_loading_state.get('source', 'TDX')})
+
+        progress_task = asyncio.create_task(_progress_broadcaster())
         await asyncio.to_thread(_sync_update)
+        progress_task.cancel()
         await broadcast({'type': 'kline_loading', 'status': 'done', 'updated': _result['updated_count']})
         _kline_loading_state.clear()
         # 补充完成后，清除涨幅榜缓存并广播刷新
