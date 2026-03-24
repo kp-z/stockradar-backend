@@ -9,6 +9,7 @@ import hashlib
 import json
 import sqlite3
 import logging
+import time
 import requests
 from datetime import datetime, timedelta
 
@@ -84,14 +85,19 @@ def set_sync_enabled(enabled):
     logger.info(f"云同步已{'开启' if _sync_enabled else '关闭'}")
 
 
-def _api(method, path, data=None, params=None):
-    """统一 REST API 调用。"""
+def _api(method, path, data=None, params=None, _retry=3):
+    """统一 REST API 调用，自动重试 SSL/连接错误。"""
     url = f"{_rest_url}/{path}"
-    r = requests.request(method, url, headers=_headers, json=data, params=params, timeout=8)
-    r.raise_for_status()
-    if r.text:
-        return r.json()
-    return []
+    for attempt in range(_retry):
+        try:
+            r = requests.request(method, url, headers=_headers, json=data, params=params, timeout=8)
+            r.raise_for_status()
+            return r.json() if r.text else []
+        except (requests.exceptions.SSLError, requests.exceptions.ConnectionError):
+            if attempt < _retry - 1:
+                time.sleep(0.5 * (2 ** attempt))  # 0.5s, 1s, 2s
+                continue
+            raise
 
 
 # ── 用户操作 ──
@@ -232,17 +238,23 @@ def cloud_get_watchlist(cloud_user_id):
 
 
 def cloud_save_schemes(cloud_user_id, schemes_json):
-    """upsert 云端筛选方案。"""
+    """保存云端筛选方案（delete+insert 方式，兼容无 UNIQUE 约束的表结构）。"""
     if not is_available() or not cloud_user_id:
         return
     try:
         data = json.loads(schemes_json) if isinstance(schemes_json, str) else schemes_json
-        headers = {**_headers, "Prefer": "resolution=merge-duplicates,return=representation"}
-        requests.post(f"{_rest_url}/user_schemes", headers=headers, json={
+        # 先删除旧数据，再插入新数据（避免依赖 DB UNIQUE 约束的 upsert）
+        requests.delete(
+            f"{_rest_url}/user_schemes",
+            headers=_headers,
+            params={"user_id": f"eq.{cloud_user_id}"},
+            timeout=15,
+        ).raise_for_status()
+        _api("POST", "user_schemes", {
             "user_id": cloud_user_id,
             "schemes_json": data,
-            "updated_at": datetime.now().isoformat(),
-        }, timeout=15).raise_for_status()
+            "updated_at": datetime.utcnow().isoformat() + "Z",
+        })
         logger.info("云端筛选方案已同步")
     except Exception as e:
         logger.warning(f"云端筛选方案保存失败: {e}")
@@ -406,36 +418,41 @@ def cloud_get_all_users_admin():
         users = _api("GET", "users", params={
             "select": "id,username,is_admin,created_at,last_login",
         })
-        result = []
-        for u in (users or []):
-            uid = u['id']
+    except Exception as e:
+        logger.warning(f"云端获取用户列表失败: {e}")
+        return []
+    result = []
+    for u in (users or []):
+        uid = u['id']
+        try:
             wl_rows = _api("GET", "user_watchlists", params={
                 "select": "stock_code",
                 "user_id": f"eq.{uid}",
                 "order": "added_at",
             })
+        except Exception:
+            wl_rows = []
+        try:
             sc_rows = _api("GET", "user_schemes", params={
                 "select": "schemes_json",
                 "user_id": f"eq.{uid}",
             })
-            schemes = None
-            if sc_rows:
-                raw = sc_rows[0].get('schemes_json')
-                schemes = raw if isinstance(raw, list) else (json.loads(raw) if raw else None)
-            result.append({
-                'id': uid,
-                'username': u['username'],
-                'is_admin': bool(u.get('is_admin')),
-                'created_at': u.get('created_at'),
-                'last_login': u.get('last_login'),
-                'watchlist': [r['stock_code'] for r in (wl_rows or [])],
-                'schemes': schemes,
-            })
-        return result
-    except Exception as e:
-        logger.warning(f"云端获取用户列表失败: {e}")
-        return []
-    return merged
+        except Exception:
+            sc_rows = []
+        schemes = None
+        if sc_rows:
+            raw = sc_rows[0].get('schemes_json')
+            schemes = raw if isinstance(raw, list) else (json.loads(raw) if raw else None)
+        result.append({
+            'id': uid,
+            'username': u['username'],
+            'is_admin': bool(u.get('is_admin')),
+            'created_at': u.get('created_at'),
+            'last_login': u.get('last_login'),
+            'watchlist': [r['stock_code'] for r in (wl_rows or [])],
+            'schemes': schemes,
+        })
+    return result
 
 
 # ── 策略模板操作（管理员发布，所有用户可读取）──
