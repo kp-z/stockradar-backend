@@ -1,0 +1,46 @@
+name: Build & Release DMG
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt -q
+          pip install -r requirements-desktop.txt -q
+
+      - name: Build DMG
+        run: |
+          rm -rf build dist
+          pyinstaller stockradar.spec --noconfirm
+          rm -f dist/StockRadar.dmg
+          rm -rf dist/dmg_staging
+          mkdir -p dist/dmg_staging
+          cp -r dist/StockRadar.app dist/dmg_staging/
+          cp install.command dist/dmg_staging/
+          ln -s /Applications dist/dmg_staging/Applications
+          hdiutil create -volname "StockRadar" \
+            -srcfolder dist/dmg_staging \
+            -ov -format UDZO \
+            dist/StockRadar.dmg
+          rm -rf dist/dmg_staging
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/StockRadar.dmg
+          generate_release_notes: true
