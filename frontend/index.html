@@ -2428,7 +2428,7 @@ function renderList(newIds) {
   const ns = new Set(newIds||[]);
   const _ddHint = document.getElementById('dataDateHint');
   if (_ddHint) {
-    if (!_screenIsRealtime && _screenDataDate) { _ddHint.textContent = `📅 ${_screenDataDate}`; _ddHint.title = '选股数据截止日期（非实时）'; _ddHint.style.display = ''; }
+    if (!_screenIsRealtime && _screenDataDate) { _ddHint.textContent = _screenDataDate; _ddHint.title = '选股数据截止日期（非实时）'; _ddHint.style.display = ''; }
     else { _ddHint.style.display = 'none'; }
   }
   alertList.innerHTML = hotHeader + filtered.map(a => renderAlert(a, ns.has(a.id), enabledNames)).join('');
