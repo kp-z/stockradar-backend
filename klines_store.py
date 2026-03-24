@@ -149,6 +149,14 @@ def load_stocks() -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def load_all_codes() -> list[str]:
+    """返回 klines.db 中所有有K线数据的股票代码列表。"""
+    conn = sqlite3.connect(_get_db_path())
+    rows = conn.execute('SELECT DISTINCT code FROM klines ORDER BY code').fetchall()
+    conn.close()
+    return [r[0] for r in rows]
+
+
 def purge_old_klines(keep_days: int = 300):
     """删除每只股票超过 keep_days 天的老数据。"""
     from datetime import date, timedelta

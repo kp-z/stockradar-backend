@@ -49,7 +49,7 @@ try:
         init_klines_db, save_klines as _kstore_save,
         load_klines as _kstore_load, get_latest_date as _kstore_latest,
         db_stats as _kstore_stats, save_stocks as _kstore_save_stocks,
-        load_stocks as _kstore_load_stocks,
+        load_stocks as _kstore_load_stocks, load_all_codes as _kstore_load_all_codes,
     )
     from feeds.historical import fetch_historical as _feed_fetch_historical
     from feeds.stock_list import (
@@ -60,7 +60,7 @@ try:
     KLINES_DB_LOADED = True
 except ImportError:
     init_klines_db = _kstore_save = _kstore_load = _kstore_latest = _kstore_stats = None
-    _kstore_save_stocks = _kstore_load_stocks = None
+    _kstore_save_stocks = _kstore_load_stocks = _kstore_load_all_codes = None
     _feed_fetch_historical = None
     _feed_fetch_stock_list = _feed_build_index = _feed_search_stocks = None
     KLINES_DB_LOADED = False
@@ -377,6 +377,11 @@ CONCEPT_MAP = {
 }
 
 STOCK_NAMES = {code: name for code, name in STOCKS}
+_stock_name_map: dict = {}  # {code: name}，从全量 _stock_search_index 同步，用于快速查名
+
+def _get_stock_name(code: str) -> str:
+    """查股票名称：全量索引(5000只) > 默认池(150只) > 代码本身"""
+    return _stock_name_map.get(code) or STOCK_NAMES.get(code, code)
 
 def code_to_market(code):
     """0=深圳 1=上海"""
@@ -398,42 +403,38 @@ def refresh_active_stocks(schemes=None):
     """根据预筛结果刷新活跃监控池。
 
     schemes 为空时使用默认 STOCKS。
-    预筛结果与自选股取并集，上限 200 只。
+    预筛结果与自选股取并集，上限 200 只（仅用于实时扫描）。
     """
     global ACTIVE_STOCKS
-    if not _snapshot_cache:
-        ACTIVE_STOCKS = list(STOCKS)
-        print(f"[活跃池] 无快照数据，使用默认 {len(ACTIVE_STOCKS)} 只")
-        return
-
-    candidates = set()
-    if schemes:
-        try:
-            from pre_screener import pre_screen_from_snapshots
-            candidates = pre_screen_from_snapshots(schemes, _snapshot_cache, max_candidates=500)
-        except Exception as e:
-            print(f"[活跃池] 预筛失败: {e}")
-
-    # 合并默认池（保证核心股票始终在监控中）
     default_codes = {code for code, _ in STOCKS}
-    all_codes = candidates | default_codes
+
+    if _snapshot_cache:
+        candidates = set()
+        if schemes:
+            try:
+                from pre_screener import pre_screen_from_snapshots
+                candidates = pre_screen_from_snapshots(schemes, _snapshot_cache, max_candidates=500)
+            except Exception as e:
+                print(f"[活跃池] 预筛失败: {e}")
+        all_codes = candidates | default_codes
+    elif klines_cache:
+        # 无快照时：用 klines_cache 中有足够数据的所有股票（不限200只）
+        all_codes = {code for code, klines in klines_cache.items() if len(klines) >= 2} | default_codes
+    else:
+        ACTIVE_STOCKS = list(STOCKS)
+        print(f"[活跃池] 无数据，使用默认 {len(ACTIVE_STOCKS)} 只")
+        return
 
     # 构建 (code, name) 列表
     new_pool = []
     for code in all_codes:
         snap = _snapshot_cache.get(code)
-        name = snap['name'] if snap else STOCK_NAMES.get(code, code)
+        name = (snap['name'] if snap else
+                _stock_name_map.get(code) or STOCK_NAMES.get(code, code))
         new_pool.append((code, name))
 
-    # 上限 200 只（优先保留默认池和候选池）
-    if len(new_pool) > 200:
-        # 先保留默认池，再按候选池填充
-        default_items = [(c, n) for c, n in new_pool if c in default_codes]
-        candidate_items = [(c, n) for c, n in new_pool if c not in default_codes]
-        new_pool = default_items + candidate_items[:200 - len(default_items)]
-
     ACTIVE_STOCKS = new_pool
-    print(f"[活跃池] 更新: {len(ACTIVE_STOCKS)} 只 (默认{len(default_codes)}, 预筛{len(candidates)})")
+    print(f"[活跃池] 更新: {len(ACTIVE_STOCKS)} 只 (默认{len(default_codes)}, 总量{len(all_codes)})")
 
 
 def load_snapshot_cache():
@@ -496,17 +497,19 @@ def _log_data(key, source, ok, detail=''):
     _data_log[key] = {'source': source, 'time': time.time(), 'ok': ok, 'detail': detail}
 
 def load_klines_from_file():
-    """启动时加载K线数据：优先 klines.db，其次 JSON 文件"""
+    """启动时加载K线数据：优先 klines.db（全量），其次 JSON 文件"""
     global klines_cache
-    # 优先从 klines.db 加载
+    # 优先从 klines.db 加载——读取全部有数据的股票，不受 ACTIVE_STOCKS 限制
     if KLINES_DB_LOADED:
         try:
             init_klines_db()
+            all_codes = _kstore_load_all_codes() if _kstore_load_all_codes else []
+            # 若 klines.db 里没有记录，回退到只加载 ACTIVE_STOCKS
+            target_codes = all_codes if all_codes else [c for c, _ in ACTIVE_STOCKS]
             loaded = 0
-            for code, _ in ACTIVE_STOCKS:
+            for code in target_codes:
                 rows = _kstore_load(code, 150)
                 if rows:
-                    # klines.db 返回 dict 列表，转换 volume→volume，保持兼容
                     klines_cache[code] = rows
                     loaded += 1
             if loaded:
@@ -728,10 +731,10 @@ def screen_stocks_by_schemes(schemes, quotes=None):
     time_str = now.strftime('%H:%M:%S')
     results = []
 
-    for code, name in ACTIVE_STOCKS:
-        klines = klines_cache.get(code, [])
+    for code, klines in klines_cache.items():
         if not klines or len(klines) < 5:
             continue
+        name = _stock_name_map.get(code) or STOCK_NAMES.get(code, code)
 
         q = quotes.get(code) if quotes else None
         matched_schemes = []
@@ -1626,6 +1629,7 @@ def get_market_state():
 # ── WebSocket ──
 clients = set()
 all_alerts = []  # 累积的异动
+_kline_loading_state = {}  # 记录后台K线补充状态，供新WS连接同步
 
 _cache_stock_list = []       # gen_stock_list_from_cache 结果缓存
 _cache_stock_list_time = 0   # 上次生成时间戳
@@ -1641,8 +1645,8 @@ def gen_stock_list_from_cache():
     results = []
     today_str = datetime.now().strftime('%Y%m%d')
     time_str = datetime.now().strftime('%H:%M:%S')
-    for code, name in ACTIVE_STOCKS:
-        klines = klines_cache.get(code, [])
+    # 直接遍历 klines_cache 全量，不受 ACTIVE_STOCKS 限制
+    for code, klines in klines_cache.items():
         if not klines or len(klines) < 2:
             continue
         last_k = klines[-1]
@@ -1651,6 +1655,7 @@ def gen_stock_list_from_cache():
         change = round((last_k['close'] - prev_k['close']) / prev_k['close'] * 100, 2) if prev_k['close'] > 0 else 0
         amount = round(last_k['amount'] / 1e8, 2) if last_k['amount'] > 1e6 else round(last_k['amount'], 2)
         concepts = CONCEPT_MAP.get(code, [])
+        name = _stock_name_map.get(code) or STOCK_NAMES.get(code, code)
 
         # 判断标签
         label = '📊 个股'
@@ -1710,7 +1715,8 @@ async def ws_handler(websocket):
                 'ashare_enabled': APP_CONFIG.get('ashare_enabled', False),
             },
             'stocks_all': (_stock_search_index or [{'code': c, 'name': n} for c, n in STOCKS]),
-            'sh_klines': sh_klines
+            'sh_klines': sh_klines,
+            'kline_loading': _kline_loading_state if _kline_loading_state else {},
         }))
         async for msg in websocket:
             try:
@@ -1791,7 +1797,7 @@ async def ws_handler(websocket):
                             quotes = fetch_realtime_quotes() or {}
                         results = []
                         for code in codes:
-                            name = STOCK_NAMES.get(code, code)
+                            name = _get_stock_name(code)
                             klines = klines_cache.get(code, [])
                             if not klines or len(klines) < 5:
                                 results.append({'code': code, 'name': name, 'matched_schemes': [], 'price': 0, 'change': 0})
@@ -2200,22 +2206,38 @@ async def main():
     # 后台尝试补充最新数据（全部放线程池，不阻塞WS服务和事件循环）
     async def background_update():
         await asyncio.sleep(3)  # 等3秒再尝试，让WS先稳定
+        # 提前计算 all_target 以便广播数量
+        _bg_all_target = []
+        if KLINES_DB_LOADED and _kstore_load_stocks:
+            _stock_list = _kstore_load_stocks()
+            if _stock_list:
+                _bg_all_target = [(s['code'], s['name']) for s in _stock_list]
+        if not _bg_all_target:
+            _bg_all_target = list(ACTIVE_STOCKS)
+        _kline_loading_state.update({'status': 'start', 'total': len(_bg_all_target), 'source': 'TDX'})
+        await broadcast({'type': 'kline_loading', 'status': 'start', 'total': len(_bg_all_target), 'source': 'TDX'})
+        _result = {'updated_count': 0}
+
         def _sync_update():
             try:
+                all_target = _bg_all_target
+
                 if not klines_cache:
-                    print("[补充] 缓存为空，尝试从通达信全量下载...")
+                    print(f"[补充] 缓存为空，尝试从通达信全量下载 {len(all_target)} 只...")
                     preload_all_klines(150)
                     return
                 client = get_tdx()
                 if client:
                     updated_count = 0
                     failed_codes = []
-                    for code, name in ACTIVE_STOCKS:
+                    print(f"[补充] 开始补充 {len(all_target)} 只股票的最新K线...")
+                    for code, name in all_target:
                         try:
                             df = client.bars(symbol=code, frequency=9, offset=5)
                             if df is not None and not df.empty:
                                 existing = klines_cache.get(code, [])
                                 existing_dates = {k['date'] for k in existing}
+                                new_added = False
                                 for _, row in df.iterrows():
                                     dt = str(row.get('datetime', ''))[:10]
                                     if dt not in existing_dates:
@@ -2228,13 +2250,16 @@ async def main():
                                             'volume': float(row.get('vol', 0)),
                                             'amount': float(row.get('amount', 0)),
                                         })
-                                existing.sort(key=lambda k: k['date'])
-                                klines_cache[code] = existing[-150:]
-                                updated_count += 1
-                        except Exception as e:
+                                        new_added = True
+                                if new_added or not klines_cache.get(code):
+                                    existing.sort(key=lambda k: k['date'])
+                                    klines_cache[code] = existing[-150:]
+                                    updated_count += 1
+                        except Exception:
                             failed_codes.append(code)
+                    _result['updated_count'] = updated_count
                     if updated_count:
-                        print(f"[补充] 完成，补充了 {updated_count} 只股票的最新K线")
+                        print(f"[补充] 完成，补充了 {updated_count} 只股票的最新K线（共 {len(klines_cache)} 只）")
                         trim_klines_to_150()
                         save_klines_to_file()
                     if failed_codes and APP_CONFIG.get('ashare_enabled') and ashare_available():
@@ -2273,6 +2298,14 @@ async def main():
             except Exception as e:
                 print(f"[补充] 补充K线失败: {e}")
         await asyncio.to_thread(_sync_update)
+        await broadcast({'type': 'kline_loading', 'status': 'done', 'updated': _result['updated_count']})
+        _kline_loading_state.clear()
+        # 补充完成后，清除涨幅榜缓存并广播刷新
+        global _cache_stock_list, _cache_stock_list_time
+        _cache_stock_list = []
+        _cache_stock_list_time = 0
+        refresh_active_stocks()
+        await broadcast({'type': 'refresh', 'reason': 'klines_updated', 'count': len(klines_cache)})
 
     asyncio.create_task(background_update())
 
@@ -2288,6 +2321,7 @@ async def main():
                 existing = _kstore_load_stocks()
                 if existing:
                     _stock_search_index = existing
+                    _stock_name_map.update({s['code']: s['name'] for s in existing if 'code' in s and 'name' in s})
                     print(f"[搜索索引] 从 klines.db 加载 {len(existing)} 只股票")
                     await broadcast({'type': 'stocks_index', 'stocks': _stock_search_index})
                     return
@@ -2303,6 +2337,7 @@ async def main():
             stock_list = await asyncio.to_thread(_fetch)
             if stock_list:
                 _stock_search_index = _feed_build_index(stock_list)
+                _stock_name_map.update({s['code']: s['name'] for s in _stock_search_index if 'code' in s and 'name' in s})
                 # 写入 klines.db
                 _kstore_save_stocks(stock_list)
                 print(f"[搜索索引] 构建完成：{len(_stock_search_index)} 只股票")

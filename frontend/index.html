@@ -100,12 +100,20 @@
 
     /* ── 设置面板 ── */
     .settings-panel {
-      display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
-      background: rgb(15, 17, 23); z-index: 100; flex-direction: column;
-      border-radius: 16px; overflow: hidden;
+      display: none; position: fixed; inset: 0; z-index: 100;
+      background: rgba(0,0,0,0.55); backdrop-filter: blur(3px);
+      align-items: center; justify-content: center;
       -webkit-app-region: no-drag;
     }
     .settings-panel.active { display: flex; }
+    .settings-modal {
+      background: rgb(15,17,23); border: 1px solid var(--border);
+      border-radius: 14px; overflow: hidden;
+      width: min(680px, calc(100vw - 32px));
+      height: min(80vh, 720px);
+      display: flex; flex-direction: column;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+    }
     .settings-header {
       padding: 12px 14px 8px; border-bottom: 1px solid var(--border);
       display: flex; align-items: center; gap: 8px;
@@ -239,7 +247,7 @@
     .template-select:focus { outline: none; border-color: #22c55e; }
     .scheme-tab-bar {
       display: flex; gap: 0; border-bottom: 1px solid var(--border);
-      overflow-x: auto; scrollbar-width: none; flex-shrink: 0;
+      overflow-x: auto; scrollbar-width: none; flex-shrink: 0; position: relative;
     }
     .scheme-tab-bar::-webkit-scrollbar { display: none; }
     .scheme-tab {
@@ -255,12 +263,19 @@
       height: 2px; background: var(--accent); border-radius: 1px;
     }
     .scheme-tab-add {
-      padding: 4px 10px; font-size: 14px; font-weight: 700;
-      color: var(--accent); background: none; border: none;
-      cursor: pointer; flex-shrink: 0; transition: background 0.15s;
-      border-radius: 4px; margin: 2px 4px;
+      padding: 3px 10px; font-size: 13px; font-weight: 700;
+      color: var(--accent); background: none; border: 1px solid rgba(99,102,241,0.4);
+      cursor: pointer; flex-shrink: 0; transition: background 0.15s, border-color 0.15s;
+      border-radius: 5px; margin: 2px 4px;
     }
-    .scheme-tab-add:hover { background: rgba(99,102,241,0.12); }
+    .scheme-tab-add:hover { background: rgba(99,102,241,0.12); border-color: var(--accent); }
+    .scheme-from-tpl-btn {
+      padding: 3px 6px; font-size: 11px; font-weight: 600;
+      color: var(--muted); background: none; border: 1px solid var(--border);
+      cursor: pointer; flex-shrink: 0; border-radius: 5px; margin: 2px 4px;
+      outline: none; appearance: auto;
+    }
+    .scheme-from-tpl-btn:hover { border-color: var(--text); color: var(--text); }
     .matched-tags { display: flex; gap: 2px; }
     .matched-tag {
       font-size: 9px; padding: 1px 5px; border-radius: 4px;
@@ -449,6 +464,7 @@
       animation: pulse 2s infinite;
     }
     @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
     /* 数据源状态指示器 */
     .source-indicators { display: flex; align-items: center; gap: 5px; margin-left: 4px; }
@@ -772,8 +788,6 @@
         <span class="logo">📡</span>
         <span class="title">异动雷达</span>
         <span class="market-status closed" id="marketStatus">未连接</span>
-        <span id="headerClock" style="font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums;"></span>
-        <span id="headerCountdown" style="font-size:10px;color:var(--orange);font-variant-numeric:tabular-nums;"></span>
       </div>
       <div class="header-actions">
         <span id="authUserLabel" style="font-size:10px;color:var(--accent);display:none;align-self:center;cursor:pointer;" title="点击管理"></span>
@@ -891,6 +905,8 @@
       <div class="footer-left">
         <div class="refresh-dot" id="refreshDot"></div>
         <span id="refreshStatus">等待连接</span>
+        <span id="headerClock" style="font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums;"></span>
+        <span id="headerCountdown" style="font-size:10px;color:var(--orange);font-variant-numeric:tabular-nums;"></span>
         <div class="source-indicators" id="sourceIndicators">
           <div class="source-dot" title="通达信">
             <div class="source-dot-circle" id="srcTdx"></div>
@@ -915,6 +931,12 @@
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:6px;">
+        <div id="klinesLoadingDot" style="display:none;align-items:center;gap:4px;cursor:default;" title="">
+          <svg width="12" height="12" viewBox="0 0 12 12" style="animation:spin 1s linear infinite;flex-shrink:0;">
+            <circle cx="6" cy="6" r="4.5" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="14 8" stroke-linecap="round"/>
+          </svg>
+          <span style="font-size:9px;color:var(--muted);white-space:nowrap;">K线加载中</span>
+        </div>
         <input type="range" class="opacity-slider" id="opacitySlider" min="30" max="100" value="92" />
         <button class="header-btn" id="configBtn" title="项目设置" style="font-size:14px;">⚙</button>
       </div>
@@ -2067,62 +2089,43 @@ const searchResults = document.getElementById('searchResults');
 
 searchBtn?.addEventListener('click', () => setMode('search'));
 
+function bindStarButtons(container) {
+  container.querySelectorAll('.watchlist-star[data-code]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const code = btn.dataset.code;
+      toggleWatchlist(code);
+      const nowIn = watchlist.includes(code);
+      btn.textContent = nowIn ? '★' : '☆';
+      btn.style.color = nowIn ? '#f59e0b' : 'var(--muted)';
+      btn.title = nowIn ? '取消自选' : '加入自选';
+    });
+  });
+}
+
 function renderSearchToAlertList(results) {
   alertList.textContent = '';
   if (!results.length) {
-    const empty = document.createElement('div');
-    empty.className = 'empty-state';
-    empty.textContent = '无匹配结果';
-    alertList.appendChild(empty);
+    alertList.innerHTML = '<div class="empty-state"><div class="empty-title">无匹配结果</div></div>';
     return;
   }
-  results.forEach(s => {
-    const inWl = watchlist.includes(s.code);
-    const card = document.createElement('div');
-    card.className = 'alert-card';
-    card.dataset.code = s.code;
+  const enabledNames = getEnabledSchemeNames();
+  alertList.innerHTML = results.map(s => {
+    const a = { id: s.code, code: s.code, name: s.name, type: 'volume', change: s.change || 0, speed: 0, amount: 0, time: '', price: s.price || 0, concepts: s.concepts || [], matched_schemes: [] };
+    return renderAlert(a, false, enabledNames);
+  }).join('');
+  // 绑定点击
+  alertList.querySelectorAll('.alert-card').forEach(card => {
+    const code = card.dataset.id ? card.dataset.id.split('-')[0] : '';
+    const s = results.find(r => r.code === code);
+    if (!s) return;
     card.style.cursor = 'pointer';
-
-    const info = document.createElement('div');
-    info.className = 'alert-info';
-
-    const top = document.createElement('div');
-    top.className = 'alert-top';
-    const nameSpan = document.createElement('span');
-    nameSpan.className = 'stock-name';
-    nameSpan.textContent = s.name;
-    const codeSpan = document.createElement('span');
-    codeSpan.className = 'stock-code';
-    codeSpan.textContent = s.code;
-    top.appendChild(nameSpan);
-    top.appendChild(codeSpan);
-
-    const mid = document.createElement('div');
-    mid.className = 'alert-middle';
-    const star = document.createElement('button');
-    star.className = 'watchlist-star';
-    star.style.color = inWl ? '#f59e0b' : 'var(--muted)';
-    star.textContent = inWl ? '★' : '☆';
-    star.title = inWl ? '取消自选' : '添加自选';
-    star.addEventListener('click', (e) => {
-      e.stopPropagation();
-      toggleWatchlist(s.code);
-      const nowIn = watchlist.includes(s.code);
-      star.textContent = nowIn ? '★' : '☆';
-      star.style.color = nowIn ? '#f59e0b' : 'var(--muted)';
-      star.title = nowIn ? '取消自选' : '添加自选';
-    });
-    mid.appendChild(star);
-
-    info.appendChild(top);
-    info.appendChild(mid);
-    card.appendChild(info);
     card.addEventListener('click', () => {
-      selectStock(s.code, s.name, s.change || 0);
       if (window.radarAPI?.openStock) window.radarAPI.openStock(s.code);
     });
-    alertList.appendChild(card);
   });
+  // 绑定星号按钮（renderAlert 已生成，只需绑定事件）
+  bindStarButtons(alertList);
 }
 
 let _searchDebounceTimer = null;
@@ -2217,15 +2220,38 @@ function connectWS() {
     }
   };
   ws.onmessage = e => { try { const d = JSON.parse(e.data);
-    if (d.type==='init') { const incoming=d.alerts||[]; if(incoming.length>0||!alerts.length){ alerts=incoming; for(const a of alerts){if(a.klines&&a.klines.length)klinesMap[a.id]=a.klines;} try{localStorage.setItem('stock-radar-alerts',JSON.stringify(alerts.slice(0,50).map(({klines,...r})=>r)));}catch(e){} try{localStorage.setItem('stock-radar-alerts-ts',Date.now());}catch(e){} } if(d.market)updateMarketLabel(d.market); if(d.sources)updateSourceDots(d.sources); if(d.stocks_all) allStocks=d.stocks_all; renderList(); if(!kvCurrentCode && d.sh_klines && d.sh_klines.length){ kvStockName.textContent='上证指数'; kvStockCode.textContent=''; kvStockChange.textContent=''; kvEmpty.style.display='none'; kvCanvas.style.display='block'; kvLastKlines=d.sh_klines; drawKlineViewer(d.sh_klines); } }
+    if (d.type==='init') { const incoming=d.alerts||[]; if(incoming.length>0||!alerts.length){ alerts=incoming; for(const a of alerts){if(a.klines&&a.klines.length)klinesMap[a.id]=a.klines;} try{localStorage.setItem('stock-radar-alerts',JSON.stringify(alerts.slice(0,50).map(({klines,...r})=>r)));}catch(e){} try{localStorage.setItem('stock-radar-alerts-ts',Date.now());}catch(e){} } if(d.market)updateMarketLabel(d.market); if(d.sources)updateSourceDots(d.sources); if(d.stocks_all) allStocks=d.stocks_all; renderList(); if(!kvCurrentCode && d.sh_klines && d.sh_klines.length){ kvStockName.textContent='上证指数'; kvStockCode.textContent=''; kvStockChange.textContent=''; kvEmpty.style.display='none'; kvCanvas.style.display='block'; kvLastKlines=d.sh_klines; drawKlineViewer(d.sh_klines); } if(d.kline_loading && d.kline_loading.status==='start'){const dot=document.getElementById('klinesLoadingDot');if(dot){dot.style.display='flex';dot.title=`正在从通达信补充 ${d.kline_loading.total} 只股票的最新K线，请稍候…`;}} }
     if (d.type==='alerts') { const items=d.items||[],ids=items.map(i=>i.id); for(const a of items){if(a.klines&&a.klines.length)klinesMap[a.id]=a.klines;} const existingCodes=new Set(alerts.map(a=>a.code)); const hasNew=items.some(a=>!existingCodes.has(a.code)); const am=new Map(alerts.map(a=>[a.code,a])); for(const a of items){const old=am.get(a.code);if(old&&old.matched_schemes)a.matched_schemes=old.matched_schemes;am.set(a.code,a);} alerts=[...am.values()].sort((a,b)=>b.timestamp-a.timestamp).slice(0,200); if(currentMode!=='search'&&hasNew){renderList(ids);alertList.scrollTop=0;} try{localStorage.setItem('stock-radar-alerts',JSON.stringify(alerts.slice(0,50).map(({klines,...r})=>r)));}catch(e){} }
     if (d.type==='market') updateMarketLabel(d.state);
     if (d.type==='sentiment') { sentimentData = d.data; if(d.data.sources)updateSourceDots(d.data.sources); renderRightSentiment(d.data); try{localStorage.setItem('stock-radar-sentiment',JSON.stringify(d.data));}catch(e){} if(!kvCurrentCode && d.data.sh_klines && d.data.sh_klines.length) { kvStockName.textContent='上证指数'; kvStockCode.textContent='000001.SH'; kvStockChange.textContent=''; kvEmpty.style.display='none'; kvCanvas.style.display='block'; kvLastKlines=d.data.sh_klines; drawKlineViewer(d.data.sh_klines); } else if(!kvCurrentCode) { kvEmpty.textContent='大盘数据加载中…'; } }
     if (d.type==='screen_results') { _schemeScreened=true; _screenDataDate=d.data_date||''; _screenIsRealtime=d.is_realtime!==false; const sa=d.alerts||[]; if(sa.length>0){alerts=sa;}else{alerts=alerts.map(({matched_schemes,...rest})=>rest);} if(currentMode!=='search') renderList(); }
     if (d.type==='klines') { kvLastKlines = d.data; if(kvCurrentCode && d.data && d.data.length) kvKlinesCache[kvCurrentCode+'_'+kvPeriod]=d.data; drawKlineViewer(d.data); }
-    if (d.type==='watchlist_results') { watchlistResults = d.results || []; if (currentMode === 'watchlist') renderWatchlistPanel(); }
-    if (d.type==='auth_result') { handleAuthResult(d); }
-    if (d.type==='cloud_sync') { handleAuthResult({success:true, saved_watchlist:d.saved_watchlist, saved_schemes:d.saved_schemes}); }
+    if (d.type==='watchlist_results') {
+      const results = d.results || [];
+      // 服务端查不到名称时（name===code），用 allStocks 补全
+      results.forEach(r => { if (!r.name || r.name === r.code) { const s = allStocks.find(x => x.code === r.code); if (s && s.name) r.name = s.name; } });
+      watchlistResults = results;
+      if (currentMode === 'watchlist') renderWatchlistPanel();
+    }
+    if (d.type==='auth_result') { handleAuthResult(d, !!d.token); }
+    if (d.type==='cloud_sync') { handleAuthResult({success:true, saved_watchlist:d.saved_watchlist, saved_schemes:d.saved_schemes}, false); }
+    if (d.type==='refresh') {
+      // 后端 K 线补充完成，重新拉取最新数据
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ action: 'refresh' }));
+      }
+    }
+    if (d.type==='kline_loading') {
+      const dot = document.getElementById('klinesLoadingDot');
+      if (!dot) return;
+      if (d.status === 'start') {
+        dot.style.display = 'flex';
+        dot.title = `正在从通达信补充 ${d.total} 只股票的最新K线，请稍候…`;
+      } else if (d.status === 'done') {
+        dot.title = `K线补充完成，更新了 ${d.updated} 只股票`;
+        setTimeout(() => { dot.style.display = 'none'; }, 1500);
+      }
+    }
     if (d.type==='admin_users') { renderAdminPanel(d.users || []); }
     if (d.type==='admin_sectors_ok') {
       const st = document.getElementById('adminSectorStatus');
@@ -2359,69 +2385,21 @@ function renderWatchlistPanel() {
     const s = allStocks.find(x => x.code === code);
     return { code, name: s ? s.name : code, change: 0, price: 0, matched_schemes: [] };
   });
-  alertList.textContent = '';
-  for (const r of items) {
-    const cc = r.change >= 0 ? 'up' : 'down';
-    const sign = r.change >= 0 ? '+' : '';
-    const card = document.createElement('div');
-    card.className = 'alert-card';
-    card.dataset.code = r.code;
+  const enabledNames = getEnabledSchemeNames();
+  alertList.innerHTML = items.map(r => {
+    const a = { id: r.code, code: r.code, name: r.name, type: 'volume', change: r.change || 0, speed: 0, amount: r.amount || 0, time: r.time || '', price: r.price || 0, concepts: r.concepts || [], matched_schemes: r.matched_schemes || [] };
+    return renderAlert(a, false, enabledNames);
+  }).join('');
+  // 绑定点击
+  alertList.querySelectorAll('.alert-card').forEach(card => {
+    const code = card.dataset.id ? card.dataset.id.split('-')[0] : '';
     card.style.cursor = 'pointer';
-
-    const info = document.createElement('div');
-    info.className = 'alert-info';
-
-    const top = document.createElement('div');
-    top.className = 'alert-top';
-    const nameSpan = document.createElement('span');
-    nameSpan.className = 'stock-name';
-    nameSpan.textContent = r.name;
-    const codeSpan = document.createElement('span');
-    codeSpan.className = 'stock-code';
-    codeSpan.textContent = r.code;
-    top.appendChild(nameSpan);
-    top.appendChild(codeSpan);
-
-    // 策略 tag
-    const tagSpan = document.createElement('span');
-    tagSpan.className = 'alert-time';
-    if (r.matched_schemes && r.matched_schemes.length) {
-      r.matched_schemes.forEach(m => {
-        const tag = document.createElement('span');
-        tag.className = 'matched-tag';
-        tag.textContent = m;
-        tagSpan.appendChild(tag);
-      });
-    }
-    top.appendChild(tagSpan);
-
-    const mid = document.createElement('div');
-    mid.className = 'alert-middle';
-    const star = document.createElement('button');
-    star.className = 'watchlist-star';
-    star.dataset.code = r.code;
-    star.style.color = '#f59e0b';
-    star.title = '取消自选';
-    star.textContent = '★';
-    star.addEventListener('click', (e) => { e.stopPropagation(); toggleWatchlist(r.code); });
-    const changeSpan = document.createElement('span');
-    changeSpan.className = 'change ' + cc;
-    changeSpan.textContent = r.price ? sign + r.change + '%' : '加载中…';
-    const priceSpan = document.createElement('span');
-    priceSpan.className = 'alert-meta';
-    priceSpan.textContent = r.price ? '¥' + r.price : '';
-    mid.appendChild(star);
-    mid.appendChild(changeSpan);
-    mid.appendChild(priceSpan);
-
-    info.appendChild(top);
-    info.appendChild(mid);
-    card.appendChild(info);
     card.addEventListener('click', () => {
-      if (r.code && window.radarAPI?.openStock) window.radarAPI.openStock(r.code);
+      if (code && window.radarAPI?.openStock) window.radarAPI.openStock(code);
     });
-    alertList.appendChild(card);
-  }
+  });
+  // 绑定星号按钮（renderAlert 已生成，只需绑定事件）
+  bindStarButtons(alertList);
 }
 
 /* ── 列表渲染 ── */
@@ -2477,6 +2455,7 @@ function renderList(newIds) {
       }
     });
   });
+  bindStarButtons(alertList);
 }
 
 /* ── 方案栏渲染 ── */
@@ -2628,7 +2607,7 @@ function renderSettings() {
   if (!activeSchemeTab || !schemes.find(s => s.id === activeSchemeTab)) {
     activeSchemeTab = schemes[0]?.id;
   }
-  let html = `<div class="settings-header"><button class="settings-back-btn" id="settingsBackBtn">←</button><span class="settings-title">⚙️ 策略</span></div>`;
+  let html = `<div class="settings-modal"><div class="settings-header"><span class="settings-title">⚙️ 策略</span><button class="settings-back-btn" id="settingsBackBtn" style="margin-left:auto;">✕</button></div>`;
   // Tab 栏
   html += `<div class="scheme-tab-bar">`;
   for (const st of schemes) {
@@ -2636,25 +2615,15 @@ function renderSettings() {
     html += `<button class="${cls}" data-id="${st.id}">${esc(st.name)}</button>`;
   }
   html += `<button class="scheme-tab-add" title="新建空白策略">＋</button>`;
+  html += `<select class="scheme-from-tpl-btn" id="schemeFromTplBtn"><option value="">从模板…</option>`;
+  for (const t of SCHEME_TEMPLATES) { html += `<option value="builtin:${t.id}">${t.name}</option>`; }
+  html += `</select>`;
   html += `</div>`;
   html += `<div class="settings-scroll">`;
-  // 官方模板折叠区
-  html += `<details style="margin-bottom:8px;border:1px solid var(--border);border-radius:7px;overflow:hidden;">`;
-  html += `<summary style="cursor:pointer;padding:7px 10px;font-size:11px;font-weight:600;color:var(--muted);list-style:none;display:flex;align-items:center;gap:6px;">`;
-  html += `<span style="font-size:13px;">${svgIcon('clipboard', 13)}</span> 官方模板`;
-  html += `</summary>`;
-  html += `<div id="officialTemplateList" style="padding:6px 10px;"></div>`;
-  html += `</details>`;
   const s = schemes.find(x => x.id === activeSchemeTab);
   if (s) {
     html += `<div class="scheme-card" data-id="${s.id}"><div class="scheme-card-head">`;
     html += `<input class="scheme-name-input" value="${esc(s.name)}" data-id="${s.id}" style="flex:1;min-width:0;" />`;
-    // 模板下拉
-    html += `<select class="template-select" id="templateSelect" title="从模板创建" style="font-size:11px;padding:2px 4px;border-radius:5px;background:rgba(255,255,255,0.06);border:1px solid var(--border);color:var(--muted);cursor:pointer;max-width:70px;"><option value="">模板</option>`;
-    for (const t of SCHEME_TEMPLATES) { html += `<option value="${t.id}">${t.name}</option>`; }
-    html += `</select>`;
-    // 刷新官方模板
-    html += `<button id="loadOfficialTplBtn" onclick="event.preventDefault();loadUserTemplates();" title="刷新官方模板" style="background:none;border:none;color:var(--muted);font-size:13px;padding:2px 4px;cursor:pointer;">↻</button>`;
     // 保存
     html += `<button class="scheme-save-btn" data-id="${s.id}" style="background:rgba(34,197,94,0.1);border:1px solid #22c55e;color:#22c55e;font-size:11px;padding:2px 8px;border-radius:5px;cursor:pointer;font-weight:600;display:flex;align-items:center;gap:3px;">${svgIcon('save', 12)} 保存</button>`;
     // 删除（仅多于1个方案时显示）
@@ -2714,6 +2683,7 @@ function renderSettings() {
     html += `</div>`; // close scheme-card
   }
   html += `</div>`; // close settings-scroll
+  html += `</div>`; // close settings-modal
   // Note: innerHTML is used here with escaped user input (esc() function)
   // All dynamic values are either scheme IDs (generated), numbers, or escaped strings
   settingsPanel.innerHTML = html;
@@ -3025,10 +2995,9 @@ function fetchSectorTopStocks(sectorName, stocksDiv) {
 }
 
 function bindSettingsEvents() {
-  document.getElementById('settingsBackBtn')?.addEventListener('click', () => {
-    settingsOpen = false;
-    settingsPanel.classList.remove('active');
-  });
+  const closeSettings = () => { settingsOpen = false; settingsPanel.classList.remove('active'); };
+  document.getElementById('settingsBackBtn')?.addEventListener('click', closeSettings);
+  settingsPanel.addEventListener('click', (e) => { if (e.target === settingsPanel) closeSettings(); });
   settingsPanel.querySelectorAll('.scheme-save-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       saveSchemes();
@@ -3243,21 +3212,22 @@ function bindSettingsEvents() {
     saveSchemes(); renderSettings(); renderSchemeBar();
   });
   // ── 从模板创建策略 ──
-  document.getElementById('templateSelect')?.addEventListener('change', (e) => {
+  document.getElementById('schemeFromTplBtn')?.addEventListener('change', (e) => {
     const val = e.target.value;
     if (!val) return;
-    const tpl = SCHEME_TEMPLATES.find(t => t.id === val);
-    if (!tpl) return;
-    const base = JSON.parse(JSON.stringify(schemes[0]?.conditions || DEFAULT_SCHEMES[0].conditions));
-    for (const k in base) { if (base[k]) base[k].enabled = false; }
-    for (const [k, v] of Object.entries(tpl.conditions)) {
-      base[k] = { ...base[k], ...v };
-    }
-    const newScheme = { id: 'scheme_' + Date.now(), name: tpl.name, enabled: true, conditions: base };
-    schemes.push(newScheme);
-    activeSchemeTab = newScheme.id;
-    saveSchemes(); renderSettings(); renderSchemeBar();
     e.target.value = '';
+    if (val.startsWith('builtin:')) {
+      const tplId = val.slice(8);
+      const tpl = SCHEME_TEMPLATES.find(t => t.id === tplId);
+      if (!tpl) return;
+      const base = JSON.parse(JSON.stringify(schemes[0]?.conditions || DEFAULT_SCHEMES[0].conditions));
+      for (const k in base) { if (base[k]) base[k].enabled = false; }
+      for (const [k, v] of Object.entries(tpl.conditions)) { base[k] = { ...base[k], ...v }; }
+      const newScheme = { id: 'scheme_' + Date.now(), name: tpl.name, enabled: true, conditions: base };
+      schemes.push(newScheme);
+      activeSchemeTab = newScheme.id;
+      saveSchemes(); renderSettings(); renderSchemeBar();
+    }
   });
 }
 
@@ -3280,30 +3250,48 @@ function setAuthLoading(loading) {
   }
 }
 
-function handleAuthResult(d) {
+function handleAuthResult(d, isActiveLogin = false) {
   setAuthLoading(false);
   const errorEl = document.getElementById('authError');
   if (d.success) {
-    authUser = d.user;
-    if (d.user) localStorage.setItem('stock-radar-auth-user', JSON.stringify(d.user));
+    if (d.user) {
+      authUser = d.user;
+      localStorage.setItem('stock-radar-auth-user', JSON.stringify(d.user));
+    }
     if (d.token) {
       authToken = d.token;
       localStorage.setItem('stock-radar-auth-token', d.token);
     }
-    // 云端数据同步：以云端为权威来源（每次本地操作都会立即推云端，云端始终是最新的）
+    // 自选股：主动登录时云端覆盖；token续登时取并集（保留本地新增）
     if (d.saved_watchlist !== undefined && d.saved_watchlist !== null) {
-      watchlist = d.saved_watchlist; // 云端直接覆盖，不合并
+      if (isActiveLogin) {
+        watchlist = d.saved_watchlist;
+      } else {
+        watchlist = [...new Set([...watchlist, ...d.saved_watchlist])];
+      }
       localStorage.setItem('stock-radar-watchlist', JSON.stringify(watchlist));
     }
-    if (d.saved_schemes && d.saved_schemes.length > 0) {
-      schemes = d.saved_schemes; // 云端直接覆盖，不合并
-      localStorage.setItem('stock-radar-schemes', JSON.stringify(schemes));
-      renderSchemeBar();
-      renderList();
-    } else if (d.saved_schemes !== undefined) {
-      // 云端无方案（首次注册），把本地推上去
-      if (ws && ws.readyState === WebSocket.OPEN)
-        ws.send(JSON.stringify({ action: 'sync_schemes', schemes }));
+    // 方案：主动登录时云端覆盖；token续登时以本地为准，并将本地推送到服务端
+    if (d.saved_schemes !== undefined) {
+      if (isActiveLogin && d.saved_schemes && d.saved_schemes.length > 0) {
+        // 主动登录：云端覆盖本地
+        schemes = d.saved_schemes;
+        localStorage.setItem('stock-radar-schemes', JSON.stringify(schemes));
+        renderSchemeBar();
+        renderList();
+      } else if (!isActiveLogin) {
+        // token续登（刷新页面）：本地为准，推送本地到服务端确保同步
+        localStorage.setItem('stock-radar-schemes', JSON.stringify(schemes));
+        if (ws && ws.readyState === WebSocket.OPEN && authUser) {
+          ws.send(JSON.stringify({ action: 'sync_schemes', schemes }));
+        }
+        renderSchemeBar();
+        renderList();
+      } else {
+        // 主动登录但云端无方案：把本地推上去
+        if (ws && ws.readyState === WebSocket.OPEN)
+          ws.send(JSON.stringify({ action: 'sync_schemes', schemes }));
+      }
     }
     updateAuthUI();
     document.getElementById('authOverlay').style.display = 'none';

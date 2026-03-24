@@ -19,6 +19,7 @@ a = Analysis(
         'klines_store',
         'pre_screener',
         'snapshot_updater',
+        'supabase_sync',
         'feeds',
         'feeds.realtime',
         'feeds.historical',
@@ -93,7 +94,7 @@ app = BUNDLE(
     info_plist={
         'NSPrincipalClass': 'NSApplication',
         'NSAppleScriptEnabled': False,
-        'CFBundleShortVersionString': '1.7.0',
+        'CFBundleShortVersionString': '1.8.0',
         'CFBundleDisplayName': 'StockRadar',
         'LSUIElement': True,
     },
