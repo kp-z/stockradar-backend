@@ -2223,12 +2223,12 @@ function connectWS() {
       const verEl = document.getElementById('appVersion');
       if (verEl) verEl.textContent = appVer;
       if (d.latest_version && d.latest_version !== appVer) {
-        const parseVer = v => v.replace(/^v/, '').split('.').map(Number);
+        const parseVer = v => { const p = v.replace(/^v/, '').split('-')[0].split('.').map(Number); return p.every(Number.isFinite) ? p : [0, 0, 0]; };
         const [ma, mi, pa] = parseVer(d.latest_version);
         const [ca, ci, cp] = parseVer(appVer);
         const isNewer = ma > ca || (ma === ca && mi > ci) || (ma === ca && mi === ci && pa > cp);
         if (isNewer) {
-          if (verEl) verEl.style.color = '#ff6b6b';
+          if (verEl) { verEl.style.color = '#ff6b6b'; verEl.style.opacity = '1'; }
           const badge = document.getElementById('updateBadge');
           if (badge) badge.style.display = 'block';
           const hint = document.getElementById('updateHint');
@@ -2236,7 +2236,7 @@ function connectWS() {
             hint.textContent = appVer + ' → ' + d.latest_version + ' ↗';
             hint.style.display = 'inline';
             hint.onclick = () => ws && ws.readyState === WebSocket.OPEN &&
-              ws.send(JSON.stringify({ action: 'open_url', url: d.latest_release_url }));
+              ws.send(JSON.stringify({ action: 'open_url' }));
           }
         }
       }
