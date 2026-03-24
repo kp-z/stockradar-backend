@@ -787,7 +787,6 @@
       </div>
       <div class="header-actions">
         <span id="authUserLabel" style="font-size:10px;color:var(--accent);display:none;align-self:center;cursor:pointer;" title="点击管理"></span>
-        <button class="header-btn" id="adminHeaderBtn" title="管理后台" style="display:none;width:24px;height:24px;font-size:11px;">🛠</button>
         <button class="header-btn" id="authBtn" title="登录" style="width:24px;height:24px;font-size:12px;">👤</button>
         <span style="font-size:9px;color:var(--muted);opacity:0.6;align-self:center;">v1.7.0</span>
       </div>
@@ -3951,5 +3950,16 @@ function renderAdminSchemes(userSchemes) {
 }
 
   </script>
+
+  <!-- 管理后台浮动按钮（右下角） -->
+  <button id="adminHeaderBtn" title="管理后台" style="
+    display:none;
+    position:fixed;bottom:16px;right:16px;z-index:200;
+    width:36px;height:36px;border:none;border-radius:10px;
+    background:rgba(255,255,255,0.08);color:var(--muted);
+    font-size:16px;cursor:pointer;
+    box-shadow:0 2px 8px rgba(0,0,0,0.4);
+    -webkit-app-region:no-drag;
+  ">🛠</button>
 </body>
 </html>
