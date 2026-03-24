@@ -2264,8 +2264,7 @@ async def main():
 
     # 后台尝试补充最新数据（全部放线程池，不阻塞WS服务和事件循环）
     async def background_update():
-        await asyncio.sleep(3)  # 等3秒再尝试，让WS先稳定
-        # 提前计算 all_target 以便广播数量
+        # 提前计算 all_target 并设置状态，让 init 消息可以携带 loading 状态
         _bg_all_target = []
         if KLINES_DB_LOADED and _kstore_load_stocks:
             _stock_list = _kstore_load_stocks()
@@ -2275,6 +2274,7 @@ async def main():
             _bg_all_target = list(ACTIVE_STOCKS)
         _bg_source = 'akshare/腾讯' if (_tdx_fail_until and time.time() < _tdx_fail_until) else 'TDX'
         _kline_loading_state.update({'status': 'start', 'total': len(_bg_all_target), 'source': _bg_source})
+        await asyncio.sleep(3)  # 等3秒再尝试，让WS先稳定（状态已设好，新连接的init会带上）
         await broadcast({'type': 'kline_loading', 'status': 'start', 'total': len(_bg_all_target), 'source': _bg_source})
         _result = {'updated_count': 0}
 
