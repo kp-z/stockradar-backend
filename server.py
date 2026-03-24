@@ -16,6 +16,13 @@ import shutil
 import traceback
 import requests
 from datetime import datetime, timedelta
+
+# ── 版本与更新检查 ──
+APP_VERSION = 'v1.8.0'   # 发版时与 stockradar.spec CFBundleShortVersionString 手动同步
+_GITHUB_API = 'https://api.github.com/repos/kp-z/stockradar-backend/releases/latest'
+_GITHUB_PAGE = 'https://github.com/kp-z/stockradar-backend/releases/latest'
+_latest_version: str | None = None
+_latest_release_url: str | None = None
 import sqlite3
 import hashlib
 import secrets
@@ -1720,6 +1727,9 @@ async def ws_handler(websocket):
             'stocks_all': (_stock_search_index or [{'code': c, 'name': n} for c, n in STOCKS]),
             'sh_klines': sh_klines,
             'kline_loading': _kline_loading_state if _kline_loading_state else {},
+            'app_version': APP_VERSION,
+            'latest_version': _latest_version,
+            'latest_release_url': _latest_release_url,
         }))
         async for msg in websocket:
             try:
@@ -1860,7 +1870,7 @@ async def ws_handler(websocket):
                         auth_user = user
                         saved_wl = await asyncio.to_thread(get_user_watchlist, user['id'])
                         saved_sc = await asyncio.to_thread(get_user_schemes, user['id'])
-                        # ── 云端数据合并 ──
+                        # ── 云端数据合并（仅自选股，方案以本地为准让前端推送覆盖云端） ──
                         if SUPABASE_LOADED and is_available() and user.get('cloud_user_id'):
                             try:
                                 cloud_wl, cloud_sc = await asyncio.gather(
@@ -1869,8 +1879,7 @@ async def ws_handler(websocket):
                                 )
                                 if cloud_wl:
                                     saved_wl = merge_watchlists(saved_wl, cloud_wl)
-                                if cloud_sc is not None:
-                                    saved_sc = cloud_sc
+                                # 不用云端方案覆盖本地，由前端判断后推送本地到云端
                             except Exception as e:
                                 print(f"[Supabase] 登录数据合并失败: {e}")
                         await websocket.send(json.dumps({
@@ -2041,6 +2050,11 @@ async def ws_handler(websocket):
                         'data_date': data_date,
                     }))
                     print(f"[选股] 手动选股完成，命中 {len(screen_results)} 只")
+                elif data.get('action') == 'open_url':
+                    url = data.get('url', '')
+                    if url.startswith('https://github.com/'):
+                        import subprocess
+                        subprocess.Popen(['open', url])
             except Exception as e:
                 print(f"[WS] 消息处理错误: {e}")
     except websockets.exceptions.ConnectionClosed:
@@ -2181,6 +2195,23 @@ async def health_check(connection, request: Request):
         with open(file_path, 'rb') as f:
             return Response(200, "OK", Headers({"Content-Type": ct}), f.read())
     return Response(404, "Not Found", Headers({"Content-Type": "text/plain"}), b"Not found\n")
+
+async def check_latest_version():
+    """启动时静默检查 GitHub 最新 Release，结果缓存到全局变量"""
+    global _latest_version, _latest_release_url
+    try:
+        import urllib.request as _ur, json as _j
+
+        def _fetch():
+            with _ur.urlopen(_GITHUB_API, timeout=5) as r:
+                return _j.loads(r.read())
+
+        data = await asyncio.to_thread(_fetch)
+        _latest_version = data.get('tag_name')
+        _latest_release_url = data.get('html_url', _GITHUB_PAGE)
+        print(f'[更新检查] 最新版本: {_latest_version}，当前: {APP_VERSION}')
+    except Exception as e:
+        print(f'[更新检查] 请求失败: {e}')
 
 async def main():
     init_db()
@@ -2349,6 +2380,7 @@ async def main():
         except Exception as e:
             print(f"[搜索索引] 构建失败: {e}")
 
+    asyncio.create_task(check_latest_version())
     asyncio.create_task(build_stock_index())
     await scan_loop()
 
