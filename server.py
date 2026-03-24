@@ -630,33 +630,58 @@ def preload_all_klines(days=150):
 
     # akshare/Ashare fallback：TDX 未连接时用多源补充
 def _preload_feed_fallback(days=150):
-    """TDX 不可用时用 akshare/腾讯/Ashare 批量预加载K线"""
-    if KLINES_DB_LOADED and _feed_fetch_historical:
-        print("[预加载] 使用 akshare/腾讯 批量拉取历史K线...")
-        loaded = 0
-        for code, name in ACTIVE_STOCKS:
-            try:
-                klines = _feed_fetch_historical(code, days)
-                if klines:
-                    klines_cache[code] = [{'date': k.date, 'open': k.open, 'close': k.close,
-                                           'high': k.high, 'low': k.low, 'volume': k.volume,
-                                           'amount': k.amount} for k in klines]
-                    loaded += 1
-            except Exception as e:
-                print(f"[预加载] {code} {name} akshare失败: {e}")
-        if loaded:
-            print(f"[预加载] akshare/腾讯 完成 {loaded}/{len(ACTIVE_STOCKS)} 只")
-            _log_data('klines_preload', 'akshare/腾讯', True, f'{loaded}/{len(ACTIVE_STOCKS)}只')
-            save_klines_to_file()
-            return
-    # 最后备用 Ashare
-    if APP_CONFIG.get('ashare_enabled') and ashare_available():
-        print("[预加载] 通达信不可用，切换 Ashare 备用源...")
-        ashare_data = preload_all_klines_ashare(ACTIVE_STOCKS, days)
-        if ashare_data:
-            klines_cache.update(ashare_data)
-            _log_data('klines_preload', 'Ashare', True, f'{len(ashare_data)}只')
-            save_klines_to_file()
+    """TDX 不可用时用 akshare/腾讯/Ashare 批量预加载K线（支持全市场）"""
+    if not (KLINES_DB_LOADED and _feed_fetch_historical):
+        # 最后备用 Ashare
+        if APP_CONFIG.get('ashare_enabled') and ashare_available():
+            print("[预加载] 通达信不可用，切换 Ashare 备用源...")
+            ashare_data = preload_all_klines_ashare(ACTIVE_STOCKS, days)
+            if ashare_data:
+                klines_cache.update(ashare_data)
+                _log_data('klines_preload', 'Ashare', True, f'{len(ashare_data)}只')
+                save_klines_to_file()
+        return
+
+    # 确定下载目标：优先全市场列表（_stock_search_index → klines.db stocks → 网络拉取 → 预设股票）
+    target = None
+    if _stock_search_index:
+        target = [(s['code'], s['name']) for s in _stock_search_index]
+        print(f"[预加载] 使用内存索引，共 {len(target)} 只股票")
+    elif _kstore_load_stocks:
+        existing = _kstore_load_stocks()
+        if existing:
+            target = [(s['code'], s['name']) for s in existing]
+            print(f"[预加载] 从 klines.db 加载股票列表，共 {len(target)} 只")
+    if not target and _feed_fetch_stock_list:
+        print("[预加载] 从网络拉取全市场股票列表...")
+        try:
+            stock_list = _feed_fetch_stock_list()
+            if stock_list:
+                target = [(s['code'], s['name']) for s in stock_list]
+                _kstore_save_stocks(stock_list)
+                print(f"[预加载] 股票列表拉取成功：{len(target)} 只")
+        except Exception as e:
+            print(f"[预加载] 拉取股票列表失败: {e}")
+    if not target:
+        target = list(ACTIVE_STOCKS)
+        print(f"[预加载] 使用预设股票列表，共 {len(target)} 只")
+
+    print(f"[预加载] 使用 akshare/腾讯 批量拉取历史K线，共 {len(target)} 只...")
+    loaded = 0
+    for code, name in target:
+        try:
+            klines = _feed_fetch_historical(code, days)
+            if klines:
+                klines_cache[code] = [{'date': k.date, 'open': k.open, 'close': k.close,
+                                       'high': k.high, 'low': k.low, 'volume': k.volume,
+                                       'amount': k.amount} for k in klines]
+                loaded += 1
+        except Exception:
+            pass
+    if loaded:
+        print(f"[预加载] akshare/腾讯 完成 {loaded}/{len(target)} 只")
+        _log_data('klines_preload', 'akshare/腾讯', True, f'{loaded}/{len(target)}只')
+        save_klines_to_file()
 
 
 def _preload_ashare_fallback(days=150):
@@ -2313,20 +2338,32 @@ async def main():
                             save_klines_to_file()
                             print(f"[补充] Ashare补充了{ashare_filled}只TDX失败股票")
                 else:
-                    print("[补充] 通达信不可用，尝试 Ashare 补充最新K线...")
-                    if APP_CONFIG.get('ashare_enabled') and ashare_available():
-                        ashare_data = preload_all_klines_ashare(STOCKS, 5)
-                        for c, new_klines in ashare_data.items():
-                            existing = klines_cache.get(c, [])
-                            existing_dates = {k['date'] for k in existing}
-                            for k in new_klines:
-                                if k['date'] not in existing_dates:
-                                    existing.append(k)
-                            existing.sort(key=lambda k: k['date'])
-                            klines_cache[c] = existing[-150:]
-                        if ashare_data:
+                    print("[补充] 通达信不可用，使用 akshare/腾讯 补充全市场K线...")
+                    if KLINES_DB_LOADED and _feed_fetch_historical:
+                        updated = 0
+                        for code, name in all_target:
+                            try:
+                                klines = _feed_fetch_historical(code, 5)
+                                if klines:
+                                    existing = klines_cache.get(code, [])
+                                    existing_dates = {k['date'] for k in existing}
+                                    new_klines = [
+                                        {'date': k.date, 'open': k.open, 'close': k.close,
+                                         'high': k.high, 'low': k.low, 'volume': k.volume, 'amount': k.amount}
+                                        for k in klines if k.date not in existing_dates
+                                    ]
+                                    if new_klines or not klines_cache.get(code):
+                                        merged = existing + new_klines
+                                        merged.sort(key=lambda x: x['date'])
+                                        klines_cache[code] = merged[-150:]
+                                        updated += 1
+                            except Exception:
+                                pass
+                        _result['updated_count'] = updated
+                        if updated:
+                            trim_klines_to_150()
                             save_klines_to_file()
-                            print(f"[补充] Ashare 补充了 {len(ashare_data)} 只股票的最新K线")
+                            print(f"[补充] akshare/腾讯 补充了 {updated}/{len(all_target)} 只股票K线")
                     else:
                         print("[补充] 使用本地缓存数据")
             except Exception as e:
@@ -2377,6 +2414,10 @@ async def main():
                 print(f"[搜索索引] 构建完成：{len(_stock_search_index)} 只股票")
                 _log_data('search_index', 'akshare/新浪', True, f'{len(_stock_search_index)}只')
                 await broadcast({'type': 'stocks_index', 'stocks': _stock_search_index})
+                # 若 klines 覆盖不足一半，触发第二轮后台补充
+                if len(klines_cache) < len(_stock_search_index) * 0.5:
+                    print(f"[搜索索引] klines 覆盖率低（{len(klines_cache)}/{len(_stock_search_index)}），触发后台补充...")
+                    asyncio.create_task(background_update())
         except Exception as e:
             print(f"[搜索索引] 构建失败: {e}")
 
