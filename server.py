@@ -26,6 +26,8 @@ _latest_release_url: str | None = None
 import sqlite3
 import hashlib
 import secrets
+import subprocess
+import urllib.request
 
 # ── Supabase 云同步（可选） ──
 try:
@@ -1921,7 +1923,9 @@ async def ws_handler(websocket):
                                         'saved_schemes': cloud_sc if cloud_sc is not None else _sc,
                                     }))
                             except Exception as e:
-                                print(f"[Supabase] token登录后台同步失败: {e}")
+                                # WebSocket 断开（1001 going away）是客户端正常离开，不需要记录
+                                if "going away" not in str(e) and "1001" not in str(e):
+                                    print(f"[Supabase] token登录后台同步失败: {e}")
                         asyncio.create_task(_token_cloud_sync())
                     else:
                         await websocket.send(json.dumps({'type': 'auth_result', 'success': False, 'error': 'token已过期'}))
@@ -2051,10 +2055,8 @@ async def ws_handler(websocket):
                     }))
                     print(f"[选股] 手动选股完成，命中 {len(screen_results)} 只")
                 elif data.get('action') == 'open_url':
-                    url = data.get('url', '')
-                    if url.startswith('https://github.com/'):
-                        import subprocess
-                        subprocess.Popen(['open', url])
+                    if _latest_release_url:
+                        subprocess.Popen(['open', _latest_release_url])
             except Exception as e:
                 print(f"[WS] 消息处理错误: {e}")
     except websockets.exceptions.ConnectionClosed:
@@ -2200,11 +2202,9 @@ async def check_latest_version():
     """启动时静默检查 GitHub 最新 Release，结果缓存到全局变量"""
     global _latest_version, _latest_release_url
     try:
-        import urllib.request as _ur, json as _j
-
         def _fetch():
-            with _ur.urlopen(_GITHUB_API, timeout=5) as r:
-                return _j.loads(r.read())
+            with urllib.request.urlopen(_GITHUB_API, timeout=5) as r:
+                return json.loads(r.read())
 
         data = await asyncio.to_thread(_fetch)
         _latest_version = data.get('tag_name')
