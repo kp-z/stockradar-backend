@@ -19,7 +19,7 @@ import requests
 from datetime import datetime, timedelta
 
 # ── 版本与更新检查 ──
-APP_VERSION = 'v1.8.5'   # 发版时与 stockradar.spec CFBundleShortVersionString 手动同步
+APP_VERSION = 'v1.9.0'   # 发版时与 stockradar.spec CFBundleShortVersionString 手动同步
 _GITHUB_API = 'https://api.github.com/repos/kp-z/stockradar-backend/releases/latest'
 _GITHUB_PAGE = 'https://github.com/kp-z/stockradar-backend/releases/latest'
 _latest_version: str | None = None

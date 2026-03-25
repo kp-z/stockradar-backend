@@ -2,34 +2,36 @@
 """StockRadar Windows PyInstaller 打包配置"""
 
 import os
+import importlib
 
 block_cipher = None
 
-# 检测 venv 中 akshare 的 file_fold 路径
-_venv_base = os.path.join('.venv', 'Lib', 'site-packages', 'akshare', 'file_fold')
-if not os.path.isdir(_venv_base):
-    # Python 3.11+ on Windows 也可能是这个路径
-    _venv_base = os.path.join('.venv', 'lib', 'site-packages', 'akshare', 'file_fold')
-if not os.path.isdir(_venv_base):
-    import site
-    for sp in site.getsitepackages():
-        candidate = os.path.join(sp, 'akshare', 'file_fold')
-        if os.path.isdir(candidate):
-            _venv_base = candidate
-            break
+# 动态检测 akshare file_fold 路径
+_akshare_file_fold = None
+try:
+    _ak_spec = importlib.util.find_spec('akshare')
+    if _ak_spec and _ak_spec.submodule_search_locations:
+        _candidate = os.path.join(list(_ak_spec.submodule_search_locations)[0], 'file_fold')
+        if os.path.isdir(_candidate):
+            _akshare_file_fold = _candidate
+except Exception:
+    pass
+
+_datas = [
+    ('frontend', 'frontend'),
+    ('klines_data.json', '.'),
+    ('assets/tray_icon.png', 'assets'),
+    ('assets/app_icon.ico', 'assets'),
+    ('lib', 'lib'),
+]
+if _akshare_file_fold:
+    _datas.append((_akshare_file_fold, 'akshare/file_fold'))
 
 a = Analysis(
     ['app_win.py'],
     pathex=[],
     binaries=[],
-    datas=[
-        ('frontend', 'frontend'),
-        ('klines_data.json', '.'),
-        ('assets/tray_icon.png', 'assets'),
-        ('assets/app_icon.ico', 'assets'),
-        ('lib', 'lib'),
-        (_venv_base, 'akshare/file_fold'),
-    ],
+    datas=_datas,
     hiddenimports=[
         'platform_dirs',
         'server',

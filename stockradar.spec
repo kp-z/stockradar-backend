@@ -1,20 +1,38 @@
 # -*- mode: python ; coding: utf-8 -*-
 """StockRadar PyInstaller 打包配置"""
 
+import os
+import importlib
+
 block_cipher = None
+
+# 动态检测 akshare file_fold 路径
+_akshare_file_fold = None
+try:
+    _ak_spec = importlib.util.find_spec('akshare')
+    if _ak_spec and _ak_spec.submodule_search_locations:
+        _candidate = os.path.join(list(_ak_spec.submodule_search_locations)[0], 'file_fold')
+        if os.path.isdir(_candidate):
+            _akshare_file_fold = _candidate
+except Exception:
+    pass
+
+_datas = [
+    ('frontend', 'frontend'),
+    ('klines_data.json', '.'),
+    ('assets/tray_icon.png', 'assets'),
+    ('lib', 'lib'),
+]
+if _akshare_file_fold:
+    _datas.append((_akshare_file_fold, 'akshare/file_fold'))
 
 a = Analysis(
     ['app.py'],
     pathex=[],
     binaries=[],
-    datas=[
-        ('frontend', 'frontend'),
-        ('klines_data.json', '.'),
-        ('assets/tray_icon.png', 'assets'),
-        ('lib', 'lib'),
-        ('.venv/lib/python3.13/site-packages/akshare/file_fold', 'akshare/file_fold'),
-    ],
+    datas=_datas,
     hiddenimports=[
+        'platform_dirs',
         'server',
         'ashare_adapter',
         'klines_store',
@@ -95,7 +113,7 @@ app = BUNDLE(
     info_plist={
         'NSPrincipalClass': 'NSApplication',
         'NSAppleScriptEnabled': False,
-        'CFBundleShortVersionString': '1.8.5',
+        'CFBundleShortVersionString': '1.9.0',
         'CFBundleDisplayName': 'StockRadar',
         'LSUIElement': True,
     },
