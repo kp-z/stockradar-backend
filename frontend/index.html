@@ -929,6 +929,7 @@
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:6px;">
+        <button id="reloadKlinesBtn" title="重新检查并下载全部K线" class="header-btn" style="font-size:14px;">↺</button>
         <div id="klinesLoadingDot" style="display:none;align-items:center;gap:4px;cursor:default;" title="">
           <svg width="12" height="12" viewBox="0 0 12 12" style="animation:spin 1s linear infinite;flex-shrink:0;">
             <circle cx="6" cy="6" r="4.5" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="14 8" stroke-linecap="round"/>
@@ -1562,6 +1563,12 @@ pinBtn?.addEventListener('click', () => { isPinned=!isPinned; pinBtn.classList.t
 pinBtn?.classList.add('pinned');
 minimizeBtn?.addEventListener('click', () => window.radarAPI?.minimize?.());
 closeBtn?.addEventListener('click', () => window.radarAPI?.close?.());
+
+document.getElementById('reloadKlinesBtn')?.addEventListener('click', () => {
+  if (ws?.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ action: 'force_reload_klines' }));
+  }
+});
 
 /* ── K线观察框 ── */
 let kvCurrentCode = '';
@@ -2308,6 +2315,15 @@ function connectWS() {
         dot.title = `K线补充完成，更新了 ${d.updated} 只股票`;
         if (txt) txt.textContent = `K线加载中`;
         setTimeout(() => { dot.style.display = 'none'; }, 1500);
+      }
+    }
+    if (d.type==='force_reload_klines') {
+      if (d.status === 'busy') {
+        const msg = document.createElement('div');
+        msg.style.cssText = 'padding:8px 12px;font-size:11px;color:var(--muted);border-bottom:1px solid var(--border);background:rgba(245,158,11,0.08);';
+        msg.textContent = `⏳ K线正在下载中，请稍候…`;
+        alertList.prepend(msg);
+        setTimeout(() => msg.remove(), 4000);
       }
     }
     if (d.type==='admin_users') { renderAdminPanel(d.users || []); }

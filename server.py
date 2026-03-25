@@ -19,7 +19,7 @@ import requests
 from datetime import datetime, timedelta
 
 # ── 版本与更新检查 ──
-APP_VERSION = 'v1.8.0'   # 发版时与 stockradar.spec CFBundleShortVersionString 手动同步
+APP_VERSION = 'v1.8.4'   # 发版时与 stockradar.spec CFBundleShortVersionString 手动同步
 _GITHUB_API = 'https://api.github.com/repos/kp-z/stockradar-backend/releases/latest'
 _GITHUB_PAGE = 'https://github.com/kp-z/stockradar-backend/releases/latest'
 _latest_version: str | None = None
@@ -1308,6 +1308,31 @@ def fetch_stock_klines(code, days=60, period='daily'):
         except Exception as e:
             print(f"[akshare 日K直拉] {code} 失败: {e}")
 
+    def _aggregate_klines(daily_data, target_period, limit):
+        """从日K数据聚合生成周K或月K"""
+        from datetime import datetime as _dt
+        groups = {}
+        for k in daily_data:
+            d = _dt.strptime(k['date'], '%Y-%m-%d')
+            if target_period == 'weekly':
+                key = d.strftime('%G-W%V')  # ISO 周
+            else:
+                key = d.strftime('%Y-%m')   # 月
+            groups.setdefault(key, []).append(k)
+        result = []
+        for key in sorted(groups):
+            bars = groups[key]
+            result.append({
+                'date': bars[-1]['date'],
+                'open': bars[0]['open'],
+                'close': bars[-1]['close'],
+                'high': max(b['high'] for b in bars),
+                'low': min(b['low'] for b in bars),
+                'volume': sum(b.get('volume', 0) for b in bars),
+                'amount': sum(b.get('amount', 0) for b in bars),
+            })
+        return result[-limit:] if limit else result
+
     # 2b. 周K/月K：直接用 akshare（不依赖 KLINES_DB_LOADED）
     if period in ('weekly', 'monthly'):
         try:
@@ -1332,6 +1357,10 @@ def fetch_stock_klines(code, days=60, period='daily'):
                 return result[-days:]
         except Exception as e:
             print(f"[akshare {period}K] {code} 失败: {e}")
+        # fallback: 从日K缓存聚合周K/月K
+        daily = klines_cache.get(code, [])
+        if daily and len(daily) >= 5:
+            return _aggregate_klines(daily, period, days)
 
     # 2c. 时K（60min）：Ashare 新浪/腾讯备用
     if period == '60min' and APP_CONFIG.get('ashare_enabled') and ashare_available():
@@ -1668,6 +1697,7 @@ def get_market_state():
 clients = set()
 all_alerts = []  # 累积的异动
 _kline_loading_state = {}  # 记录后台K线补充状态，供新WS连接同步
+_bg_update_running = False  # 防止 background_update 并发重入
 
 _cache_stock_list = []       # gen_stock_list_from_cache 结果缓存
 _cache_stock_list_time = 0   # 上次生成时间戳
@@ -2080,6 +2110,17 @@ async def ws_handler(websocket):
                         'data_date': data_date,
                     }))
                     print(f"[选股] 手动选股完成，命中 {len(screen_results)} 只")
+                elif data.get('action') == 'force_reload_klines':
+                    if _kline_loading_state.get('status') == 'start':
+                        await websocket.send(json.dumps({'type': 'force_reload_klines', 'status': 'busy', 'msg': '正在下载中，请稍候'}))
+                    else:
+                        incomplete = [code for code, klines in list(klines_cache.items()) if len(klines) < 5]
+                        if incomplete:
+                            for code in incomplete:
+                                del klines_cache[code]
+                            print(f"[强制刷新] 清除 {len(incomplete)} 只不完整股票的缓存，准备重新下载")
+                        await websocket.send(json.dumps({'type': 'force_reload_klines', 'status': 'started'}))
+                        asyncio.create_task(background_update())
                 elif data.get('action') == 'open_url':
                     if _latest_release_url:
                         subprocess.Popen(['open', _latest_release_url])
@@ -2266,6 +2307,11 @@ async def main():
 
     # 后台尝试补充最新数据（全部放线程池，不阻塞WS服务和事件循环）
     async def background_update():
+        global _bg_update_running
+        if _bg_update_running:
+            print("[补充] 已有下载任务进行中，跳过重复触发")
+            return
+        _bg_update_running = True
         # 提前计算 all_target 并设置状态，让 init 消息可以携带 loading 状态
         _bg_all_target = []
         if KLINES_DB_LOADED and _kstore_load_stocks:
@@ -2300,7 +2346,8 @@ async def main():
                         if i % 50 == 0:
                             _kline_loading_state['progress'] = i
                         try:
-                            future = _tdx_executor.submit(client.bars, symbol=code, frequency=9, offset=5)
+                            _offset = 5 if klines_cache.get(code) else 150
+                            future = _tdx_executor.submit(client.bars, symbol=code, frequency=9, offset=_offset)
                             df = future.result(timeout=3)
                             if df is not None and not df.empty:
                                 existing = klines_cache.get(code, [])
@@ -2358,7 +2405,8 @@ async def main():
                             if i % 500 == 0 and i > 0:
                                 print(f"[补充] 进度 {i}/{total_count}...")
                             try:
-                                klines = _feed_fetch_historical(code, 5)
+                                _days = 5 if klines_cache.get(code) else 150
+                                klines = _feed_fetch_historical(code, _days)
                                 if klines:
                                     existing = klines_cache.get(code, [])
                                     existing_dates = {k['date'] for k in existing}
@@ -2394,7 +2442,10 @@ async def main():
                                      'source': _kline_loading_state.get('source', 'TDX')})
 
         progress_task = asyncio.create_task(_progress_broadcaster())
-        await asyncio.to_thread(_sync_update)
+        try:
+            await asyncio.to_thread(_sync_update)
+        finally:
+            _bg_update_running = False
         progress_task.cancel()
         await broadcast({'type': 'kline_loading', 'status': 'done', 'updated': _result['updated_count']})
         _kline_loading_state.clear()
@@ -2441,10 +2492,16 @@ async def main():
                 print(f"[搜索索引] 构建完成：{len(_stock_search_index)} 只股票")
                 _log_data('search_index', 'akshare/新浪', True, f'{len(_stock_search_index)}只')
                 await broadcast({'type': 'stocks_index', 'stocks': _stock_search_index})
-                # 若 klines 覆盖不足一半，触发第二轮后台补充
+                # 若 klines 覆盖不足一半，等第一轮结束后触发第二轮补充（最多等3分钟）
                 if len(klines_cache) < len(_stock_search_index) * 0.5:
-                    print(f"[搜索索引] klines 覆盖率低（{len(klines_cache)}/{len(_stock_search_index)}），触发后台补充...")
-                    asyncio.create_task(background_update())
+                    print(f"[搜索索引] klines 覆盖率低（{len(klines_cache)}/{len(_stock_search_index)}），等待第一轮结束后触发全市场补充...")
+                    async def _delayed_full_update():
+                        for _ in range(180):
+                            if not _bg_update_running:
+                                break
+                            await asyncio.sleep(1)
+                        asyncio.create_task(background_update())
+                    asyncio.create_task(_delayed_full_update())
         except Exception as e:
             print(f"[搜索索引] 构建失败: {e}")
 

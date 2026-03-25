@@ -12,6 +12,7 @@ a = Analysis(
         ('klines_data.json', '.'),
         ('assets/tray_icon.png', 'assets'),
         ('lib', 'lib'),
+        ('.venv/lib/python3.13/site-packages/akshare/file_fold', 'akshare/file_fold'),
     ],
     hiddenimports=[
         'server',
@@ -94,7 +95,7 @@ app = BUNDLE(
     info_plist={
         'NSPrincipalClass': 'NSApplication',
         'NSAppleScriptEnabled': False,
-        'CFBundleShortVersionString': '1.8.0',
+        'CFBundleShortVersionString': '1.8.4',
         'CFBundleDisplayName': 'StockRadar',
         'LSUIElement': True,
     },
