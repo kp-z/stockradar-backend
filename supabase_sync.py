@@ -85,12 +85,13 @@ def set_sync_enabled(enabled):
     logger.info(f"云同步已{'开启' if _sync_enabled else '关闭'}")
 
 
-def _api(method, path, data=None, params=None, _retry=3):
+def _api(method, path, data=None, params=None, headers_override=None, _retry=3):
     """统一 REST API 调用，自动重试 SSL/连接错误。"""
     url = f"{_rest_url}/{path}"
+    hdrs = headers_override or _headers
     for attempt in range(_retry):
         try:
-            r = requests.request(method, url, headers=_headers, json=data, params=params, timeout=8)
+            r = requests.request(method, url, headers=hdrs, json=data, params=params, timeout=8)
             r.raise_for_status()
             return r.json() if r.text else []
         except (requests.exceptions.SSLError, requests.exceptions.ConnectionError):
@@ -238,7 +239,7 @@ def cloud_get_watchlist(cloud_user_id):
 
 
 def cloud_save_schemes(cloud_user_id, schemes_json):
-    """保存云端筛选方案（UPSERT，原子操作，无竞态）。"""
+    """保存云端筛选方案（UPSERT，原子操作，无竞态，自动重试SSL错误）。"""
     if not is_available() or not cloud_user_id:
         return
     try:
@@ -247,18 +248,10 @@ def cloud_save_schemes(cloud_user_id, schemes_json):
             **_headers,
             "Prefer": "resolution=merge-duplicates,return=representation",
         }
-        r = requests.post(
-            f"{_rest_url}/user_schemes",
-            headers=upsert_headers,
-            params={"on_conflict": "user_id"},
-            json={
-                "user_id": cloud_user_id,
-                "schemes_json": data,
-                "updated_at": datetime.utcnow().isoformat() + "Z",
-            },
-            timeout=15,
-        )
-        r.raise_for_status()
+        _api("POST", "user_schemes",
+             data={"user_id": cloud_user_id, "schemes_json": data, "updated_at": datetime.utcnow().isoformat() + "Z"},
+             params={"on_conflict": "user_id"},
+             headers_override=upsert_headers)
         logger.info("云端筛选方案已同步")
     except Exception as e:
         logger.warning(f"云端筛选方案保存失败: {e}")

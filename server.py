@@ -19,7 +19,7 @@ import requests
 from datetime import datetime, timedelta
 
 # ── 版本与更新检查 ──
-APP_VERSION = 'v1.8.4'   # 发版时与 stockradar.spec CFBundleShortVersionString 手动同步
+APP_VERSION = 'v1.8.5'   # 发版时与 stockradar.spec CFBundleShortVersionString 手动同步
 _GITHUB_API = 'https://api.github.com/repos/kp-z/stockradar-backend/releases/latest'
 _GITHUB_PAGE = 'https://github.com/kp-z/stockradar-backend/releases/latest'
 _latest_version: str | None = None
@@ -1804,12 +1804,13 @@ async def ws_handler(websocket):
                     period = data.get('period', 'daily')
                     if period not in ('60min', 'daily', 'weekly', 'monthly'):
                         period = 'daily'
-                    # 日K 优先从缓存取；周/月K 每次实时拉取
+                    # 日K 优先从缓存取；缓存不足则实时拉取；周/月K 每次实时拉取
                     if period == 'daily':
-                        klines = klines_cache.get(code, [])
-                        if klines:
-                            klines = klines[-days:]
+                        cached = klines_cache.get(code, [])
+                        if len(cached) >= days:
+                            klines = cached[-days:]
                         else:
+                            # 缓存不足，实时拉取完整数据
                             try:
                                 klines = await asyncio.wait_for(
                                     asyncio.to_thread(fetch_stock_klines, code, days, period),
@@ -1819,7 +1820,20 @@ async def ws_handler(websocket):
                                 klines = []
                                 print(f"[K线] {code} daily 拉取超时")
                             if klines:
-                                klines_cache[code] = klines
+                                # 合并新拉取数据与已有缓存，去重后保留最近150天
+                                if cached:
+                                    existing_dates = {k['date'] for k in cached}
+                                    for k in klines:
+                                        if k['date'] not in existing_dates:
+                                            cached.append(k)
+                                    cached.sort(key=lambda x: x['date'])
+                                    klines_cache[code] = cached[-150:]
+                                else:
+                                    klines_cache[code] = klines[-150:]
+                                klines = klines_cache[code][-days:]
+                            elif cached:
+                                # 拉取失败但有少量缓存，先返回已有数据
+                                klines = cached[-days:]
                     else:
                         try:
                             klines = await asyncio.wait_for(
@@ -2114,7 +2128,7 @@ async def ws_handler(websocket):
                     if _kline_loading_state.get('status') == 'start':
                         await websocket.send(json.dumps({'type': 'force_reload_klines', 'status': 'busy', 'msg': '正在下载中，请稍候'}))
                     else:
-                        incomplete = [code for code, klines in list(klines_cache.items()) if len(klines) < 5]
+                        incomplete = [code for code, klines in list(klines_cache.items()) if len(klines) < 30]
                         if incomplete:
                             for code in incomplete:
                                 del klines_cache[code]
@@ -2346,7 +2360,7 @@ async def main():
                         if i % 50 == 0:
                             _kline_loading_state['progress'] = i
                         try:
-                            _offset = 5 if klines_cache.get(code) else 150
+                            _offset = 5 if len(klines_cache.get(code, [])) >= 30 else 150
                             future = _tdx_executor.submit(client.bars, symbol=code, frequency=9, offset=_offset)
                             df = future.result(timeout=3)
                             if df is not None and not df.empty:
@@ -2381,7 +2395,7 @@ async def main():
                     if failed_codes and APP_CONFIG.get('ashare_enabled') and ashare_available():
                         ashare_filled = 0
                         for fc in failed_codes:
-                            ashare_klines = fetch_klines_ashare(fc, 5)
+                            ashare_klines = fetch_klines_ashare(fc, 150 if len(klines_cache.get(fc, [])) < 30 else 5)
                             if ashare_klines:
                                 existing = klines_cache.get(fc, [])
                                 existing_dates = {k['date'] for k in existing}
@@ -2405,7 +2419,7 @@ async def main():
                             if i % 500 == 0 and i > 0:
                                 print(f"[补充] 进度 {i}/{total_count}...")
                             try:
-                                _days = 5 if klines_cache.get(code) else 150
+                                _days = 5 if len(klines_cache.get(code, [])) >= 30 else 150
                                 klines = _feed_fetch_historical(code, _days)
                                 if klines:
                                     existing = klines_cache.get(code, [])
