@@ -14,12 +14,8 @@ def _get_db_path() -> str:
     global _DB_PATH
     if _DB_PATH:
         return _DB_PATH
-    if getattr(sys, 'frozen', False):
-        data_dir = os.path.expanduser('~/Library/Application Support/StockRadar')
-        os.makedirs(data_dir, exist_ok=True)
-    else:
-        data_dir = os.path.dirname(os.path.abspath(__file__))
-    _DB_PATH = os.path.join(data_dir, 'klines.db')
+    from platform_dirs import get_data_dir
+    _DB_PATH = os.path.join(get_data_dir(), 'klines.db')
     return _DB_PATH
 
 

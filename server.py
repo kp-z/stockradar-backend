@@ -87,12 +87,9 @@ def _get_resource_dir():
 
 
 def _get_data_dir():
-    """可读写的数据目录，打包后放 ~/Library/Application Support/StockRadar/"""
-    if getattr(sys, 'frozen', False):
-        data_dir = os.path.expanduser('~/Library/Application Support/StockRadar')
-        os.makedirs(data_dir, exist_ok=True)
-        return data_dir
-    return os.path.dirname(os.path.abspath(__file__))
+    """可读写的数据目录（跨平台）"""
+    from platform_dirs import get_data_dir
+    return get_data_dir()
 
 # ── SQLite 用户数据库 ──
 DB_FILE = os.path.join(_get_data_dir(), 'stockradar.db')
