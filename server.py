@@ -7,6 +7,7 @@ import asyncio
 import json
 import time
 import random
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 import websockets
 from websockets.asyncio.server import Request, Response
 from websockets.datastructures import Headers
@@ -2083,7 +2084,8 @@ async def ws_handler(websocket):
                     if _latest_release_url:
                         subprocess.Popen(['open', _latest_release_url])
             except Exception as e:
-                print(f"[WS] 消息处理错误: {e}")
+                if "going away" not in str(e) and "1001" not in str(e):
+                    print(f"[WS] 消息处理错误: {e}")
     except websockets.exceptions.ConnectionClosed:
         pass
     finally:
@@ -2272,7 +2274,9 @@ async def main():
                 _bg_all_target = [(s['code'], s['name']) for s in _stock_list]
         if not _bg_all_target:
             _bg_all_target = list(ACTIVE_STOCKS)
-        _bg_source = 'akshare/腾讯' if (_tdx_fail_until and time.time() < _tdx_fail_until) else 'TDX'
+        _market_open = get_market_state() in ('open', 'call')
+        _tdx_cooling = bool(_tdx_fail_until and time.time() < _tdx_fail_until)
+        _bg_source = 'TDX' if (_market_open and not _tdx_cooling) else 'akshare/腾讯'
         _kline_loading_state.update({'status': 'start', 'total': len(_bg_all_target), 'source': _bg_source})
         await asyncio.sleep(3)  # 等3秒再尝试，让WS先稳定（状态已设好，新连接的init会带上）
         await broadcast({'type': 'kline_loading', 'status': 'start', 'total': len(_bg_all_target), 'source': _bg_source})
@@ -2291,11 +2295,13 @@ async def main():
                     updated_count = 0
                     failed_codes = []
                     print(f"[补充] 开始补充 {len(all_target)} 只股票的最新K线...")
+                    _tdx_executor = ThreadPoolExecutor(max_workers=1)
                     for i, (code, name) in enumerate(all_target):
-                        if i % 100 == 0:
+                        if i % 50 == 0:
                             _kline_loading_state['progress'] = i
                         try:
-                            df = client.bars(symbol=code, frequency=9, offset=5)
+                            future = _tdx_executor.submit(client.bars, symbol=code, frequency=9, offset=5)
+                            df = future.result(timeout=3)
                             if df is not None and not df.empty:
                                 existing = klines_cache.get(code, [])
                                 existing_dates = {k['date'] for k in existing}
@@ -2317,8 +2323,9 @@ async def main():
                                     existing.sort(key=lambda k: k['date'])
                                     klines_cache[code] = existing[-150:]
                                     updated_count += 1
-                        except Exception:
+                        except (FuturesTimeoutError, Exception):
                             failed_codes.append(code)
+                    _tdx_executor.shutdown(wait=False)
                     _result['updated_count'] = updated_count
                     if updated_count:
                         print(f"[补充] 完成，补充了 {updated_count} 只股票的最新K线（共 {len(klines_cache)} 只）")
@@ -2344,9 +2351,12 @@ async def main():
                     print("[补充] 通达信不可用，使用 akshare/腾讯 补充全市场K线...")
                     if KLINES_DB_LOADED and _feed_fetch_historical:
                         updated = 0
+                        total_count = len(all_target)
                         for i, (code, name) in enumerate(all_target):
-                            if i % 100 == 0:
+                            if i % 50 == 0:
                                 _kline_loading_state['progress'] = i
+                            if i % 500 == 0 and i > 0:
+                                print(f"[补充] 进度 {i}/{total_count}...")
                             try:
                                 klines = _feed_fetch_historical(code, 5)
                                 if klines:

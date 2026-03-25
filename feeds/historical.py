@@ -139,16 +139,17 @@ def fetch_ashare(code: str, days: int = 150) -> list[Kline] | None:
 
 
 def fetch_historical(code: str, days: int = 150) -> list[Kline] | None:
-    """统一入口：akshare(含amount) → 腾讯 → Ashare。
+    """统一入口：腾讯 → akshare → Ashare。
 
+    腾讯接口当前最稳定；akshare 作为含 amount 字段的备选；Ashare 本地库兜底。
     返回 list[Kline] 或 None（全部源失败）。
     """
-    result = fetch_akshare(code, days)
-    if result:
-        return result
-    print(f'[历史K线] {code} akshare 失败，尝试腾讯')
     result = fetch_tencent(code, days)
     if result:
         return result
-    print(f'[历史K线] {code} 腾讯失败，尝试 Ashare 备用')
+    print(f'[历史K线] {code} 腾讯失败，尝试 akshare')
+    result = fetch_akshare(code, days)
+    if result:
+        return result
+    print(f'[历史K线] {code} akshare 失败，尝试 Ashare 备用')
     return fetch_ashare(code, days)

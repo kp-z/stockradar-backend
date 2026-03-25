@@ -320,6 +320,7 @@
     .alert-time { font-size: 10px; color: var(--muted); margin-left: auto; white-space: nowrap; }
     .alert-middle { display: flex; align-items: center; gap: 5px; }
     .alert-meta { font-size: 10px; color: var(--muted); margin-left: auto; white-space: nowrap; }
+    .alert-price { font-size: 12px; font-weight: 700; color: var(--text); white-space: nowrap; }
     .alert-tag {
       font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 5px;
     }
@@ -784,6 +785,9 @@
         <span class="logo">📡</span>
         <span class="title">异动雷达</span>
         <span class="market-status closed" id="marketStatus">未连接</span>
+        <span id="headerClock" style="font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums;margin-left:4px;"></span>
+        <span id="headerCountdown" style="font-size:10px;color:var(--orange);font-variant-numeric:tabular-nums;"></span>
+        <span id="dataDateHint" style="display:none;font-size:9px;color:var(--muted);"></span>
       </div>
       <div class="header-actions">
         <span id="authUserLabel" style="font-size:10px;color:var(--accent);display:none;align-self:center;cursor:pointer;" title="点击管理"></span>
@@ -901,9 +905,6 @@
       <div class="footer-left">
         <div class="refresh-dot" id="refreshDot"></div>
         <span id="refreshStatus">等待连接</span>
-        <span id="headerClock" style="font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums;"></span>
-        <span id="headerCountdown" style="font-size:10px;color:var(--orange);font-variant-numeric:tabular-nums;"></span>
-        <span id="dataDateHint" style="display:none;font-size:9px;color:var(--muted);"></span>
         <div class="source-indicators" id="sourceIndicators">
           <div class="source-dot" title="通达信">
             <div class="source-dot-circle" id="srcTdx"></div>
@@ -1565,6 +1566,7 @@ closeBtn?.addEventListener('click', () => window.radarAPI?.close?.());
 /* ── K线观察框 ── */
 let kvCurrentCode = '';
 let kvCurrentName = '';
+let kvCurrentPrice = 0;
 let kvDays = 60;               // 请求天数（后端 days 参数）
 let kvVisibleBars = 60;        // 当前视图内显示的根数（wheel 缩放）
 let kvOffset = 0;              // 向左平移偏移量（0 = 最新数据靠右）
@@ -1606,7 +1608,7 @@ async function fetchDailyKlines(code, days) {
   }
 }
 
-function selectStock(code, name, change) {
+function selectStock(code, name, change, price) {
   // 限制缓存最多保留 10 只股票，超过时删最老的
   if (code !== kvCurrentCode) {
     const cachedCodes = [...new Set(Object.keys(kvKlinesCache).map(k => k.split('_')[0]))];
@@ -1617,6 +1619,7 @@ function selectStock(code, name, change) {
   }
   kvCurrentCode = code;
   kvCurrentName = name;
+  kvCurrentPrice = price ? parseFloat(price) : 0;
   kvStockName.textContent = name;
   kvStockCode.textContent = code;
   const cc = parseFloat(change) >= 0 ? 'up' : 'down';
@@ -1684,6 +1687,14 @@ function drawKlineViewer(klines) {
   for (const k of data) {
     if (k.high > hi) hi = k.high;
     if (k.low < lo) lo = k.low;
+  }
+  // 回撤线参考区间的高低也纳入 Y 轴，防止折线超出图表
+  if (kvOverlayRetracement && klines.length > 1) {
+    const refSlice = klines.slice(Math.max(0, klines.length - kvRetraceDays));
+    const rH = Math.max(...refSlice.map(k => k.high));
+    const rL = Math.min(...refSlice.map(k => k.low));
+    if (rH > hi) hi = rH;
+    if (rL < lo) lo = rL;
   }
   const range = hi - lo || 1;
   const margin = range * 0.05;
@@ -1822,21 +1833,32 @@ function drawKlineViewer(klines) {
     drawBollLine(bollLower, '#38bdf8');
   }
 
-  // 叠加层：回撤线（基于全量K线最近N天的高低点，画水平虚线，不随视图变化）
+  // 叠加层：回撤线（滚动窗口折线：每根K线取过去N天高低算回撤值）
   if (kvOverlayRetracement && klines.length > 1) {
     const ratio = kvOverlayRetraceRatio;
-    const refData = klines.slice(-kvRetraceDays);
-    const rHigh = Math.max(...refData.map(k => k.high));
-    const rLow  = Math.min(...refData.map(k => k.low));
-    const retraceVal = rHigh - (rHigh - rLow) * ratio;
-    const ry = padTop + (hi - retraceVal) / totalRange * chartH;
+    const N = kvRetraceDays;
+    const retraceValues = data.map((_, di) => {
+      const absIdx = startIdx + di;
+      const wStart = Math.max(0, absIdx - N + 1);
+      const win = klines.slice(wStart, absIdx + 1);
+      const wHigh = Math.max(...win.map(k => k.high));
+      const wLow  = Math.min(...win.map(k => k.low));
+      return wHigh - (wHigh - wLow) * ratio;
+    });
     ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
     ctx.beginPath();
-    ctx.moveTo(padLeft, ry);
-    ctx.lineTo(padLeft + chartW, ry);
+    let started = false;
+    for (let i = 0; i < data.length; i++) {
+      const x = padLeft + (i + 0.5) * barW;
+      const y = padTop + (hi - retraceValues[i]) / totalRange * chartH;
+      if (!started) { ctx.moveTo(x, y); started = true; }
+      else ctx.lineTo(x, y);
+    }
     ctx.stroke(); ctx.setLineDash([]);
+    const lastVal = retraceValues[retraceValues.length - 1];
+    const lastY = padTop + (hi - lastVal) / totalRange * chartH;
     ctx.fillStyle = '#f59e0b'; ctx.font = '9px monospace'; ctx.textAlign = 'right';
-    ctx.fillText(`回撤${(ratio*100).toFixed(1)}%(${kvRetraceDays}天)=${retraceVal.toFixed(2)}`, W - padRight - 4, ry - 4);
+    ctx.fillText(`回撤${(ratio*100).toFixed(1)}%(${N}天)=${lastVal.toFixed(2)}`, W - padRight - 4, lastY - 4);
   }
 
   // 日期标签
@@ -1885,7 +1907,9 @@ function drawKlineViewer(klines) {
   ctx.font = '11px sans-serif';
   ctx.textAlign = 'right';
   const periodLabel = {daily:'日K', weekly:'周K', monthly:'月K', '60min':'时K'}[kvPeriod] || '日K';
-  ctx.fillText(kvCurrentName + ' ' + kvCurrentCode + ' ' + data.length + '根 ' + periodLabel, W - padRight, 14);
+  const displayPrice = kvCurrentPrice ? kvCurrentPrice.toFixed(2) : (data.length ? data[data.length-1].close.toFixed(2) : '');
+  const priceStr = displayPrice ? ' ' + displayPrice : '';
+  ctx.fillText(kvCurrentName + ' ' + kvCurrentCode + priceStr + '  ' + data.length + '根 ' + periodLabel, W - padRight, 14);
 }
 
 // +/- 按钮：调整 visibleBars（本地缩放，不重新请求）
@@ -2029,7 +2053,7 @@ alertList.addEventListener('click', (e) => {
   // watchlist 模式
   if (currentMode === 'watchlist') {
     const r = watchlistResults.find(x => x.code === code);
-    if (r) selectStock(r.code, r.name, r.change);
+    if (r) selectStock(r.code, r.name, r.change, r.price);
     else { const s = allStocks.find(x => x.code === code); if (s) selectStock(code, s.name, 0); }
     return;
   }
@@ -2039,14 +2063,15 @@ alertList.addEventListener('click', (e) => {
     const name = nameEl ? nameEl.textContent : code;
     const changeEl = card.querySelector('.change');
     const change = changeEl ? parseFloat(changeEl.textContent) || 0 : 0;
-    selectStock(code, name, change);
+    const price = parseFloat(card.querySelector('canvas')?.dataset.price) || 0;
+    selectStock(code, name, change, price);
     return;
   }
   // stock 模式
   const allAlerts = alerts;
   const alert = allAlerts.find(a => a.id === id);
   if (alert) {
-    selectStock(alert.code, alert.name, alert.change);
+    selectStock(alert.code, alert.name, alert.change, alert.price);
   }
 });
 
@@ -2380,9 +2405,10 @@ function renderAlert(a, isNew, enabledNames) {
   const starStyle = isWatched ? 'color:#f59e0b;' : 'color:var(--muted);';
   const starChar = isWatched ? '★' : '☆';
   const starTitle = isWatched ? '取消自选' : '加入自选';
+  const priceHtml = a.price ? `<span class="alert-price">${parseFloat(a.price).toFixed(2)}</span>` : '';
   return `<div class="alert-card${nc}" data-id="${a.id}"><div class="alert-info">
   <div class="alert-top"><span class="stock-name">${esc(a.name)}</span><span class="stock-code">${a.code}</span>${cHtml}<span class="alert-time">${a.time}</span></div>
-  <div class="alert-middle">${mHtml}${bigOrderHtml}<button class="watchlist-star" data-code="${a.code}" style="${starStyle}" title="${starTitle}">${starChar}</button><span class="change ${cc}">${sign}${a.change}%</span><span class="alert-meta">速${a.speed}%/m · ${a.amount}亿</span></div>
+  <div class="alert-middle">${mHtml}${bigOrderHtml}<button class="watchlist-star" data-code="${a.code}" style="${starStyle}" title="${starTitle}">${starChar}</button>${priceHtml}<span class="change ${cc}">${sign}${a.change}%</span><span class="alert-meta">速${a.speed}%/m · ${a.amount}亿</span></div>
 </div><div class="alert-chart"><canvas data-alert-id="${a.id}" data-price="${a.price}" data-change="${a.change}"></canvas></div></div>`;
 }
 

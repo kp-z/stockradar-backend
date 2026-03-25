@@ -238,23 +238,27 @@ def cloud_get_watchlist(cloud_user_id):
 
 
 def cloud_save_schemes(cloud_user_id, schemes_json):
-    """保存云端筛选方案（delete+insert 方式，兼容无 UNIQUE 约束的表结构）。"""
+    """保存云端筛选方案（UPSERT，原子操作，无竞态）。"""
     if not is_available() or not cloud_user_id:
         return
     try:
         data = json.loads(schemes_json) if isinstance(schemes_json, str) else schemes_json
-        # 先删除旧数据，再插入新数据（避免依赖 DB UNIQUE 约束的 upsert）
-        requests.delete(
+        upsert_headers = {
+            **_headers,
+            "Prefer": "resolution=merge-duplicates,return=representation",
+        }
+        r = requests.post(
             f"{_rest_url}/user_schemes",
-            headers=_headers,
-            params={"user_id": f"eq.{cloud_user_id}"},
+            headers=upsert_headers,
+            params={"on_conflict": "user_id"},
+            json={
+                "user_id": cloud_user_id,
+                "schemes_json": data,
+                "updated_at": datetime.utcnow().isoformat() + "Z",
+            },
             timeout=15,
-        ).raise_for_status()
-        _api("POST", "user_schemes", {
-            "user_id": cloud_user_id,
-            "schemes_json": data,
-            "updated_at": datetime.utcnow().isoformat() + "Z",
-        })
+        )
+        r.raise_for_status()
         logger.info("云端筛选方案已同步")
     except Exception as e:
         logger.warning(f"云端筛选方案保存失败: {e}")
