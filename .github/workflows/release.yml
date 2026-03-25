@@ -1,4 +1,4 @@
-name: Build & Release DMG
+name: Build & Release
 
 on:
   push:
@@ -6,10 +6,8 @@ on:
       - 'v*'
 
 jobs:
-  build:
+  build-mac:
     runs-on: macos-latest
-    permissions:
-      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -39,8 +37,66 @@ jobs:
             dist/StockRadar.dmg
           rm -rf dist/dmg_staging
 
+      - name: Upload Mac artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-dmg
+          path: dist/StockRadar.dmg
+
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt -q
+          pip install -r requirements-desktop-win.txt -q
+
+      - name: Generate ICO icon
+        run: python scripts/generate_ico.py
+
+      - name: Build EXE
+        run: pyinstaller stockradar_win.spec --noconfirm
+
+      - name: Package ZIP
+        run: Compress-Archive -Path 'dist\StockRadar\*' -DestinationPath 'dist\StockRadar-Windows.zip' -Force
+        shell: pwsh
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-zip
+          path: dist/StockRadar-Windows.zip
+
+  release:
+    needs: [build-mac, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download Mac artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: mac-dmg
+          path: dist/
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-zip
+          path: dist/
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/StockRadar.dmg
+          files: |
+            dist/StockRadar.dmg
+            dist/StockRadar-Windows.zip
           generate_release_notes: true
